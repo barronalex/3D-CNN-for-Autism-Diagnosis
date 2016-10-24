@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 import pandas as pd
 
-DATA_DIR = '../data/'
+DATA_DIR = 'data/'
 
 image_dimensions = [91, 109, 91]
 
@@ -26,7 +26,7 @@ fALFF = f['data'][:]
 coord = c['data'][:]
 
 # normalize to unit mean and variance
-fALFF = (fALFF - np.mean(fALFF, axis=1)) / np.std(fALFF, axis=1)
+fALFF = ((fALFF.T - np.mean(fALFF, axis=1)) / np.std(fALFF, axis=1)).T
 
 f.close()
 c.close()

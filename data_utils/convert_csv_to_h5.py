@@ -1,7 +1,7 @@
 import pandas as pd
 import h5py
 
-DATA_DIR = '../data/'
+DATA_DIR = 'data/'
 
 def convert_csv_to_h5(filename):
     print 'converting', filename
