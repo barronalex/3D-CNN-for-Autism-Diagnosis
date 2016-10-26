@@ -45,6 +45,9 @@ for i in range(fALFF.shape[0]):
     for j in range(fALFF.shape[1]):
         images[tuple([i] + coord[j].tolist())] = fALFF[i, j]
 
+
+images = np.pad(images, ((0,0),(5,0),(3,0),(5,0)), 'constant', constant_values=0)
+
 train_images = images[:train_num]
 val_images = images[train_num:train_num+val_num]
 test_images = images[-test_num:]

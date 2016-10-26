@@ -1,0 +1,2 @@
+model_checkpoint_path: "cae.weights"
+all_model_checkpoint_paths: "cae.weights"
