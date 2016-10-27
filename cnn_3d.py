@@ -15,7 +15,7 @@ DATA_DIR = 'data'
 class Config(object):
     """Holds model hyperparams and data information."""
 
-    batch_size = 5
+    batch_size = 10
     lr = 0.001
     hidden_size = 100
     max_epochs = 100
@@ -75,6 +75,8 @@ def conv3d(inputs, kernel_size, num_channels, num_filters, scope='', stride=1, a
 
     output = activation(output)
 
+    output = slim.batch_norm(output)
+
     print output.get_shape()
 
     # add l2 reg
@@ -83,8 +85,9 @@ def conv3d(inputs, kernel_size, num_channels, num_filters, scope='', stride=1, a
     
     return output
 
-def _save_first_image(images):
-    mpimg.imsave("output.png", images[0,35,:,:,0])
+def _save_images(images, name, depth=5):
+    for i in range(images.shape[0]):
+        mpimg.imsave(name + str(i) + ".png", images[i,depth,:,:,0])
 
 class CNN_3D(object):
     
@@ -131,35 +134,38 @@ class CNN_3D(object):
 
     def inference(self):
 
-        trainable = False
+        if self.config.mode == 'pretrain':
+            trainable = True
+        else:
+            trainable = True
 
-        forward1 = conv3d(self.f_images_placeholder, 3, 1, 30, scope='conv_1', trainable=trainable)
-        forward2 = conv3d(forward1, 3, 30, 30, scope='conv_2', stride=2, trainable=trainable)
+        forward1 = conv3d(self.f_images_placeholder, 3, 1, 15, scope='conv_1', trainable=trainable)
+        forward2 = conv3d(forward1, 3, 15, 15, scope='conv_2', stride=2, trainable=trainable)
 
-        forward3 = conv3d(forward2, 3, 30, 30, scope='conv_3', trainable=trainable)
-        forward4 = conv3d(forward3, 3, 30, 30, scope='conv_4', stride=2, trainable=trainable)
+        forward3 = conv3d(forward2, 3, 15, 15, scope='conv_3', trainable=trainable)
+        forward4 = conv3d(forward3, 3, 15, 15, scope='conv_4', stride=2, trainable=trainable)
 
-        forward5 = conv3d(forward4, 3, 30, 30, scope='conv_5', trainable=trainable)
-        forward6 = conv3d(forward5, 3, 30, 30, scope='conv_6', stride=2, trainable=trainable)
-        self.forward = forward4
-
-        print forward6.get_shape()
+        forward5 = conv3d(forward4, 3, 15, 15, scope='conv_5', trainable=trainable)
+        forward6 = conv3d(forward5, 3, 15, 15, scope='conv_6', stride=2, trainable=trainable)
+        self.forward = forward6
 
         if self.config.mode == 'pretrain':
-            backward1 = conv3d(forward6, 3, 30, 30, scope='conv_6', transpose=True)
-            backward2 = conv3d(backward1, 3, 30, 30, scope='conv_5', stride=2, transpose=True)
+            backward1 = conv3d(forward6, 3, 15, 15, scope='conv_6', transpose=True)
+            backward2 = conv3d(backward1, 3, 15, 15, scope='conv_5', stride=2, transpose=True)
 
-            backward3 = conv3d(forward4, 3, 30, 30, scope='conv_4', transpose=True)
-            backward4 = conv3d(backward3, 3, 30, 30, scope='conv_3', stride=2, transpose=True)
+            backward3 = conv3d(forward4, 3, 15, 15, scope='conv_4', transpose=True)
+            backward4 = conv3d(backward3, 3, 15, 15, scope='conv_3', stride=2, transpose=True)
 
-            backward5 = conv3d(backward4, 3, 30, 30, scope='conv_2', transpose=True)
-            backward6 = conv3d(backward5, 3, 30, 1, scope='conv_1', stride=2, transpose=True)
+            backward5 = conv3d(backward4, 3, 15, 15, scope='conv_2', transpose=True)
+            backward6 = conv3d(backward5, 3, 15, 1, scope='conv_1', stride=2, transpose=True)
 
             output = backward6
 
         else:
-            flattened = tf.reshape(forward4, [self.config.batch_size, -1])
+            flattened = tf.reshape(forward6, [self.config.batch_size, -1])
 
+        
+            self.flat = flattened
             print flattened.get_shape()
 
             with tf.variable_scope('fully_connected'):
@@ -167,7 +173,7 @@ class CNN_3D(object):
                 output = slim.fully_connected(flattened, 2000)
                 self.first_out = output
                 output = slim.fully_connected(output, 500)
-                output = slim.fully_connected(output, 2)
+                output = slim.fully_connected(output, 2, activation_fn=None)
 
         return output
 
@@ -191,9 +197,12 @@ class CNN_3D(object):
             index = range(batch_start,(batch_start + batch_size))
             feed = {self.f_images_placeholder: images[index],
                     self.autism_labels_placeholder: labels[index]}
-            loss, pred, output, _ = session.run([self.calculate_loss, self.pred, self.forward, train_op], feed_dict=feed)
+            loss, pred, forward, first_out, _ = session.run([self.calculate_loss, self.pred, self.forward, self.first_out, train_op], feed_dict=feed)
 
             #print output
+            #_save_images(forward, 'features')
+
+            #print first_out
 
             if step == 0 and self.config.mode == 'pretrain':
                 #_save_first_image(output)

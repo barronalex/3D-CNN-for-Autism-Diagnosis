@@ -33,9 +33,9 @@ with session:
     best_val_loss = float('inf')
     best_val_accuracy = 0.0
 
-    if model.config.mode == 'supervised' or args.restore:
-        print '==> restoring weights'
-        saver.restore(session, 'weights/cae.weights')
+    #if model.config.mode == 'supervised' or args.restore:
+        #print '==> restoring weights'
+        #saver.restore(session, 'weights/cae.weights')
 
     print '==> starting training'
     for epoch in xrange(model.config.max_epochs):
