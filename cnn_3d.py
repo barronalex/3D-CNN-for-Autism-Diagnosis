@@ -1,7 +1,11 @@
 import tensorflow as tf
 import numpy as np
 import h5py
-import matplotlib.image as mpimg
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+from conv_utils import conv3d, conv3d_transpose
 
 import sys
 import time
@@ -17,12 +21,13 @@ class Config(object):
 
     batch_size = 10
     lr = 0.001
+    l2 = 0.0001
     hidden_size = 100
     max_epochs = 100
     early_stopping = 20
+    dropout = 0.8
 
     mode = 'pretrain'
-
 
 def _load_from_h5(filename):
     f = h5py.File(filename, 'r')
@@ -30,64 +35,20 @@ def _load_from_h5(filename):
     f.close()
     return data
 
-def conv3d(inputs, kernel_size, num_channels, num_filters, scope='', stride=1, activation=tf.nn.relu, l2=0.0001, padding='SAME', transpose=False, trainable=True):
 
-
-    def get_deconv_dim(dim_size, stride_size, kernel_size, padding):
-        dim_size *= stride_size
-        if padding == 'VALID' and dim_size is not None:
-            dim_size += max(kernel_size - stride_size, 0)
-        return dim_size
-
-    if transpose:
-
-        with tf.variable_scope(scope, initializer = slim.xavier_initializer(), reuse=True):
-
-            weights = tf.get_variable('weights',
-                    ([kernel_size, kernel_size, kernel_size, num_filters, num_channels]))
-
-            batch_size, height, width, depth, _ = inputs.get_shape()
-
-            out_height = get_deconv_dim(height, stride, kernel_size, padding)
-            out_width = get_deconv_dim(width, stride, kernel_size, padding)
-            out_depth = get_deconv_dim(depth, stride, kernel_size, padding)
-
-            output_shape = int(batch_size), int(out_height), int(out_width), int(out_depth), int(num_filters)
-
-            output = tf.nn.conv3d_transpose(inputs, weights, output_shape, [1, stride, stride, stride, 1], padding=padding)
-            
-            out_shape = inputs.get_shape().as_list()
-            out_shape[-1] = num_filters
-            out_shape[1] = get_deconv_dim(out_shape[1], stride, kernel_size, padding)
-            out_shape[2] = get_deconv_dim(out_shape[2], stride, kernel_size, padding)
-            out_shape[3] = get_deconv_dim(out_shape[3], stride, kernel_size, padding)
-            output.set_shape(out_shape)
-        
-    else:
-
-        with tf.variable_scope(scope, initializer = slim.xavier_initializer()):
-
-            weights = tf.get_variable('weights',
-                    ([kernel_size, kernel_size, kernel_size, num_channels, num_filters]), trainable=trainable)
-            output = tf.nn.conv3d(inputs, weights, [1, stride, stride, stride, 1], padding)
-
-    output = slim.bias_add(output, reuse=False)
-
-    output = activation(output)
-
-    output = slim.batch_norm(output)
-
-    print output.get_shape()
-
-    # add l2 reg
-    reg = l2*tf.nn.l2_loss(weights)
-    tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, reg)
-    
-    return output
-
-def _save_images(images, name, depth=5):
+def _save_images(images, outputs, name, depth=5):
     for i in range(images.shape[0]):
-        mpimg.imsave(name + str(i) + ".png", images[i,depth,:,:,0])
+        fig = plt.figure()
+        a = fig.add_subplot(1,2,1)
+        imgplot = plt.imshow(images[i,depth,:,:,0])
+        a.set_title('Original')
+        plt.colorbar(ticks=[0.1,0.3,0.5,0.7], orientation ='horizontal')
+        a = fig.add_subplot(1,2,2)
+        imgplot = plt.imshow(outputs[i,depth,:,:,0])
+        imgplot.set_clim(0.0,0.7)
+        a.set_title('Reconstructed')
+        plt.colorbar(ticks=[0.1,0.3,0.5,0.7], orientation ='horizontal')
+        fig.savefig('figures/' + name + str(i) + ".png")
 
 class CNN_3D(object):
     
@@ -99,8 +60,6 @@ class CNN_3D(object):
         train_images = np.expand_dims(train_images, axis=-1)
         val_images = np.expand_dims(val_images, axis=-1)
 
-        mpimg.imsave('actual.png', train_images[0,35,:,:,0])
-
         train_labels = _load_from_h5(DATA_DIR + '/train_labels.h5')
         val_labels = _load_from_h5(DATA_DIR + '/val_labels.h5')
 
@@ -110,6 +69,7 @@ class CNN_3D(object):
     def add_placeholders(self):
         self.f_images_placeholder = tf.placeholder(tf.float32, shape=[self.config.batch_size] + image_dimensions + [1])
         self.autism_labels_placeholder = tf.placeholder(tf.int64, shape=(self.config.batch_size,))
+        self.dropout_placeholder = tf.placeholder(tf.float32)
 
     def get_predictions(self, output):
         """Get answer predictions from output"""
@@ -125,6 +85,8 @@ class CNN_3D(object):
             loss = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(output, self.autism_labels_placeholder)) 
         loss += tf.reduce_sum(tf.pack(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)))
 
+        print len(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
+
         return loss
 
     def add_training_op(self, loss):
@@ -139,41 +101,48 @@ class CNN_3D(object):
         else:
             trainable = True
 
-        forward1 = conv3d(self.f_images_placeholder, 3, 1, 15, scope='conv_1', trainable=trainable)
+        images = slim.dropout(self.f_images_placeholder, keep_prob=self.dropout_placeholder)
+
+        forward1 = conv3d(images, 3, 1, 15, scope='conv_1', trainable=trainable)
         forward2 = conv3d(forward1, 3, 15, 15, scope='conv_2', stride=2, trainable=trainable)
+
+        forward2 = slim.dropout(forward2)
 
         forward3 = conv3d(forward2, 3, 15, 15, scope='conv_3', trainable=trainable)
         forward4 = conv3d(forward3, 3, 15, 15, scope='conv_4', stride=2, trainable=trainable)
 
+        forward4 = slim.dropout(forward4)
+
         forward5 = conv3d(forward4, 3, 15, 15, scope='conv_5', trainable=trainable)
         forward6 = conv3d(forward5, 3, 15, 15, scope='conv_6', stride=2, trainable=trainable)
+
+        forward6 = slim.dropout(forward6)
+
         self.forward = forward6
 
         if self.config.mode == 'pretrain':
-            backward1 = conv3d(forward6, 3, 15, 15, scope='conv_6', transpose=True)
-            backward2 = conv3d(backward1, 3, 15, 15, scope='conv_5', stride=2, transpose=True)
+            backward1 = conv3d_transpose(forward6, 3, 15, 15, scope='conv_6')
+            backward2 = conv3d_transpose(backward1, 3, 15, 15, scope='conv_5', stride=2)
 
-            backward3 = conv3d(forward4, 3, 15, 15, scope='conv_4', transpose=True)
-            backward4 = conv3d(backward3, 3, 15, 15, scope='conv_3', stride=2, transpose=True)
+            backward3 = conv3d_transpose(forward4, 3, 15, 15, scope='conv_4')
+            backward4 = conv3d_transpose(backward3, 3, 15, 15, scope='conv_3', stride=2)
 
-            backward5 = conv3d(backward4, 3, 15, 15, scope='conv_2', transpose=True)
-            backward6 = conv3d(backward5, 3, 15, 1, scope='conv_1', stride=2, transpose=True)
+            backward5 = conv3d_transpose(backward4, 3, 15, 15, scope='conv_2')
+            backward6 = conv3d_transpose(backward5, 3, 15, 1, scope='conv_1', stride=2)
 
             output = backward6
 
         else:
-            flattened = tf.reshape(forward6, [self.config.batch_size, -1])
-
+            flattened = slim.flatten(forward6)
         
             self.flat = flattened
-            print flattened.get_shape()
 
             with tf.variable_scope('fully_connected'):
                 # fully connected layer
-                output = slim.fully_connected(flattened, 2000)
+                output = slim.fully_connected(flattened, 2000, weights_regularizer=slim.l2_regularizer(self.config.l2))
                 self.first_out = output
-                output = slim.fully_connected(output, 500)
-                output = slim.fully_connected(output, 2, activation_fn=None)
+                output = slim.fully_connected(output, 500, weights_regularizer=slim.l2_regularizer(self.config.l2))
+                output = slim.fully_connected(output, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
 
         return output
 
@@ -185,28 +154,26 @@ class CNN_3D(object):
         total_loss = []
         accuracy = 0
 
+        dp = self.config.dropout
+        if train_op is None:
+            train_op = tf.no_op()
+            dp = 1        
+
         # shuffle data
         p = np.random.permutation(images.shape[0])
         images, labels = images[p], labels[p]
-
-        if train_op is None:
-            train_op = tf.no_op()
 
         for step in xrange(total_steps):
             batch_start = step*batch_size
             index = range(batch_start,(batch_start + batch_size))
             feed = {self.f_images_placeholder: images[index],
-                    self.autism_labels_placeholder: labels[index]}
-            loss, pred, forward, first_out, _ = session.run([self.calculate_loss, self.pred, self.forward, self.first_out, train_op], feed_dict=feed)
+                    self.autism_labels_placeholder: labels[index],
+                    self.dropout_placeholder: dp}
+            loss, pred, forward, _ = session.run([self.calculate_loss, self.pred, self.forward, train_op], feed_dict=feed)
 
-            #print output
-            #_save_images(forward, 'features')
-
-            #print first_out
-
+            # save a sample of 10 image comparisons
             if step == 0 and self.config.mode == 'pretrain':
-                #_save_first_image(output)
-                pass
+                _save_images(images[index], forward, 'features')
 
             answers = labels[index]
             accuracy += np.sum(pred == answers)/float(len(answers))
