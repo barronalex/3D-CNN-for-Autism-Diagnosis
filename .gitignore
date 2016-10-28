@@ -1,5 +1,7 @@
 /data
 *.swp
 *.pyc
+.*.png
+*.png
 /weights
 /figures
