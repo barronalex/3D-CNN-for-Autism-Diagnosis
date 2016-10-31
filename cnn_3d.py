@@ -4,6 +4,7 @@ import h5py
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 
 from conv_utils import conv3d, conv3d_transpose
 
@@ -19,13 +20,16 @@ DATA_DIR = 'data'
 class Config(object):
     """Holds model hyperparams and data information."""
 
-    batch_size = 10
+    batch_size = 15
     lr = 0.001
     l2 = 0.0001
     hidden_size = 100
     max_epochs = 100
     early_stopping = 20
     dropout = 0.8
+
+    kernel_size = 3 
+    num_filters = 8
 
     mode = 'pretrain'
 
@@ -36,19 +40,20 @@ def _load_from_h5(filename):
     return data
 
 
-def _save_images(images, outputs, name, depth=5):
+def _save_images(images, outputs, name, depth=50):
     for i in range(images.shape[0]):
         fig = plt.figure()
         a = fig.add_subplot(1,2,1)
         imgplot = plt.imshow(images[i,depth,:,:,0])
         a.set_title('Original')
-        plt.colorbar(ticks=[0.1,0.3,0.5,0.7], orientation ='horizontal')
         a = fig.add_subplot(1,2,2)
         imgplot = plt.imshow(outputs[i,depth,:,:,0])
-        imgplot.set_clim(0.0,0.7)
         a.set_title('Reconstructed')
-        plt.colorbar(ticks=[0.1,0.3,0.5,0.7], orientation ='horizontal')
         fig.savefig('figures/' + name + str(i) + ".png")
+        plt.close()
+    #for i in range(images.shape[0]):
+        #mpimg.imsave('figures/actual.png', images[i,depth,:,:,0])
+        #mpimg.imsave('figures/output.png', outputs[i,depth,:,:,0])
 
 class CNN_3D(object):
     
@@ -99,47 +104,55 @@ class CNN_3D(object):
         if self.config.mode == 'pretrain':
             trainable = True
         else:
-            trainable = True
+            trainable = False
 
         images = slim.dropout(self.f_images_placeholder, keep_prob=self.dropout_placeholder)
 
-        forward1 = conv3d(images, 3, 1, 15, scope='conv_1', trainable=trainable)
-        forward2 = conv3d(forward1, 3, 15, 15, scope='conv_2', stride=2, trainable=trainable)
+        #for i in range(self.config.num_layers):
+            #stride = 1 if i % 2 == 0 else 2
+            #forward = conv3d(forward, 3, 15, 15, scope='conv_2', stride=stride, trainable=trainable)
+
+        forward1 = conv3d(images, self.config.kernel_size, 1, self.config.num_filters, scope='conv_1', trainable=trainable)
+        forward2 = conv3d(forward1, self.config.kernel_size, self.config.num_filters, self.config.num_filters, scope='conv_2', stride=2, trainable=trainable)
 
         forward2 = slim.dropout(forward2)
 
-        forward3 = conv3d(forward2, 3, 15, 15, scope='conv_3', trainable=trainable)
-        forward4 = conv3d(forward3, 3, 15, 15, scope='conv_4', stride=2, trainable=trainable)
+        forward3 = conv3d(forward2, self.config.kernel_size, self.config.num_filters, self.config.num_filters, scope='conv_3', trainable=trainable)
+        forward4 = conv3d(forward3, self.config.kernel_size, self.config.num_filters, self.config.num_filters, scope='conv_4', stride=2, trainable=trainable)
 
         forward4 = slim.dropout(forward4)
 
-        forward5 = conv3d(forward4, 3, 15, 15, scope='conv_5', trainable=trainable)
-        forward6 = conv3d(forward5, 3, 15, 15, scope='conv_6', stride=2, trainable=trainable)
+        print forward4.get_shape()
 
-        forward6 = slim.dropout(forward6)
+        #forward5 = conv3d(forward4, 3, self.config.num_filters, self.config.num_filters, scope='conv_5', trainable=trainable)
+        #forward6 = conv3d(forward5, 3, self.config.num_filters, self.config.num_filters, scope='conv_6', stride=2, trainable=trainable)
 
-        self.forward = forward6
+        #forward6 = slim.dropout(forward6)
+
+        self.forward = forward4
 
         if self.config.mode == 'pretrain':
-            backward1 = conv3d_transpose(forward6, 3, 15, 15, scope='conv_6')
-            backward2 = conv3d_transpose(backward1, 3, 15, 15, scope='conv_5', stride=2)
+            #backward1 = conv3d_transpose(forward6, 3, self.config.num_filters, self.config.num_filters, scope='conv_6')
+            #backward2 = conv3d_transpose(backward1, 3, self.config.num_filters, self.config.num_filters, scope='conv_5', stride=2)
 
-            backward3 = conv3d_transpose(forward4, 3, 15, 15, scope='conv_4')
-            backward4 = conv3d_transpose(backward3, 3, 15, 15, scope='conv_3', stride=2)
+            backward3 = conv3d_transpose(forward4, self.config.kernel_size, self.config.num_filters, self.config.num_filters, scope='conv_4')
+            backward4 = conv3d_transpose(backward3, self.config.kernel_size, self.config.num_filters, self.config.num_filters, scope='conv_3', stride=2)
 
-            backward5 = conv3d_transpose(backward4, 3, 15, 15, scope='conv_2')
-            backward6 = conv3d_transpose(backward5, 3, 15, 1, scope='conv_1', stride=2)
+            backward5 = conv3d_transpose(backward4, self.config.kernel_size, self.config.num_filters, self.config.num_filters, scope='conv_2')
+            backward6 = conv3d_transpose(backward5, self.config.kernel_size, self.config.num_filters, 1, scope='conv_1', stride=2)
 
             output = backward6
 
         else:
-            flattened = slim.flatten(forward6)
+            flattened = slim.flatten(forward4)
         
             self.flat = flattened
 
+            print flattened.get_shape()
+
             with tf.variable_scope('fully_connected'):
                 # fully connected layer
-                output = slim.fully_connected(flattened, 2000, weights_regularizer=slim.l2_regularizer(self.config.l2))
+                output = slim.fully_connected(flattened, 500, weights_regularizer=slim.l2_regularizer(self.config.l2))
                 self.first_out = output
                 output = slim.fully_connected(output, 500, weights_regularizer=slim.l2_regularizer(self.config.l2))
                 output = slim.fully_connected(output, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
@@ -169,11 +182,13 @@ class CNN_3D(object):
             feed = {self.f_images_placeholder: images[index],
                     self.autism_labels_placeholder: labels[index],
                     self.dropout_placeholder: dp}
-            loss, pred, forward, _ = session.run([self.calculate_loss, self.pred, self.forward, train_op], feed_dict=feed)
+            loss, pred, output, forward, _ = session.run([self.calculate_loss, self.pred, self.output, self.forward, train_op], feed_dict=feed)
 
             # save a sample of 10 image comparisons
-            if step == 0 and self.config.mode == 'pretrain':
-                _save_images(images[index], forward, 'features')
+            if step == 0:
+                if self.config.mode == 'pretrain':
+                    _save_images(images[index], output, 'comparision')
+                _save_images(images[index], forward, 'features', depth = 6)
 
             answers = labels[index]
             accuracy += np.sum(pred == answers)/float(len(answers))
