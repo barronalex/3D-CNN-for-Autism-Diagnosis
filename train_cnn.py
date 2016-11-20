@@ -1,20 +1,36 @@
 import tensorflow as tf
 import argparse
 import time
+import os
 
-from cnn_3d import CNN_3D, Config
+import cnn_3d
+import mri_input
+
+import sys
+
+BATCH_SIZE = 15
+MAX_STEPS = 10000
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--mode", default="pretrain")
 parser.add_argument("-r", "--restore", default=1)
 args = parser.parse_args()
 
-config = Config()
+image, label = mri_input.read_and_decode_single_example('data/mri_train.tfrecords')
 
-config.mode = args.mode
+image_batch, label_batch = tf.train.shuffle_batch(
+    [image, label], batch_size=BATCH_SIZE,
+    capacity=100,
+    min_after_dequeue=50)
 
-with tf.variable_scope('3d_CAE'):
-    model = CNN_3D(config)
+# train as auto-encoder in pretraining
+label_batch = image_batch if args.mode == 'pretrain' else label_batch
+
+outputs = cnn_3d.inference(image_batch, args.mode)
+
+loss = cnn_3d.loss(outputs, label_batch, args.mode)
+
+train_op = cnn_3d.train_op(loss)
 
 # I'm setting certain variables to be not trained? Then trying to restore them>
 pretrained_vars = [v for v in tf.all_variables() if 'fully_connected' not in v.name and 'Adam' not in v.name and 'mean' not in v.name and 'variance' not in v.name and 'power' not in v.name]
@@ -29,46 +45,34 @@ pretrained_vars = [v for v in tf.all_variables() if 'fully_connected' not in v.n
 
 saver = tf.train.Saver(pretrained_vars)
 
+sess = tf.Session()
+
 init = tf.initialize_all_variables()
+sess.run(init)
 
+if int(args.restore):
+    print '==> restoring weights'
+    if os.path.exists('weights/cae_pretrain.weights'):
+        saver.restore(sess, 'weights/cae_pretrain.weights')
 
-session = tf.Session()
-with session:
-    print '==> initializing variables'
-    session.run(init)
-    
-    best_val_epoch = 0
-    prev_epoch_loss = float('inf')
-    best_val_loss = float('inf')
-    best_val_accuracy = 0.0
+tf.train.start_queue_runners(sess=sess)
 
-    if int(args.restore):
-        print '==> restoring weights'
-        saver.restore(session, 'weights/cae_pretrain.weights')
+for step in xrange(MAX_STEPS):
+    start_time = time.time()
+    _, loss_value, ib, o = sess.run([train_op, loss, image_batch, outputs])
+    duration = time.time() - start_time
 
-    print '==> starting training'
-    for epoch in xrange(model.config.max_epochs):
-        print 'Epoch {}'.format(epoch)
-        start = time.time()
+    if step % 10 == 0:
+        cnn_3d._save_images(ib, o, 'new')
+        num_examples_per_step = BATCH_SIZE
+        examples_per_sec = num_examples_per_step / duration
+        sec_per_batch = float(duration)
 
-        train_loss, train_accuracy = model.run_epoch(
-          session, model.train,
-          train_op=model.train_step)
-        print 'Training loss: {}'.format(train_loss)
-        #if model.config.mode == 'supervised':
-        valid_loss, valid_accuracy = model.run_epoch(session, model.val)
-        print 'Validation loss: {}'.format(valid_loss)
-        print 'Training accuracy: {}'.format(train_accuracy)
-        print 'Vaildation accuracy: {}'.format(valid_accuracy)
+        format_str = ('%s: step, loss = %.2f (%.1f examples/sec; %.3f '
+                      'sec/batch)')
+        print (format_str % (step, loss_value,
+                             examples_per_sec, sec_per_batch))
 
-        saver.save(session, 'weights/cae_' + model.config.mode + '.weights')
-
-        if model.config.mode == 'supervised':
-            if valid_loss < best_val_loss:
-                best_val_loss = valid_loss
-                best_val_epoch = epoch
-
-            if epoch - best_val_epoch > model.config.early_stopping:
-                break
-        print 'Total time: {}'.format(time.time() - start)
+    if step % 1000 == 0 or (step + 1) == MAX_STEPS:
+         saver.save(sess, 'weights/cae_' + args.mode + '.weights')
 

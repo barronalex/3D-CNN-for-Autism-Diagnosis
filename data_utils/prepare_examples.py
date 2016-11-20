@@ -1,6 +1,8 @@
 import h5py
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+from tqdm import tqdm
 
 DATA_DIR = 'data/'
 
@@ -13,10 +15,28 @@ test_split = 0.2
 
 assert train_split + val_split + test_split == 1
 
-def save_to_h5(filename, d):
-    o = h5py.File(DATA_DIR + filename, 'w')
-    o.create_dataset('data', data = d)
-    o.close()
+def save_to_record(images, labels, split='train'):
+    print ''
+    print '==> saving ' + split + ' data into tf records file'
+    writer = tf.python_io.TFRecordWriter(DATA_DIR + '/mri' + '_' + split + '.tfrecords')
+
+    for i in tqdm(range(len(images))):
+        image = images[i]
+        label = labels[i]
+
+        example = tf.train.Example(
+                features = tf.train.Features(
+                    feature ={
+                        'label': tf.train.Feature(
+                            int64_list=tf.train.Int64List(value=[label])),
+                        'image': tf.train.Feature(
+                            float_list=tf.train.FloatList(value=image.flatten())
+                            )
+                    }
+                )
+            )
+        serialized = example.SerializeToString()
+        writer.write(serialized)
 
 # load voxel value and coordinate files
 f = h5py.File(DATA_DIR + 'fALFF.h5', 'r')
@@ -36,12 +56,12 @@ train_num = int(round_num_examples * train_split)
 val_num = int(round_num_examples * val_split)
 test_num = int(round_num_examples * test_split + fALFF.shape[0] % 10)
 
-#create empty images
+# create empty images
 images = np.zeros([fALFF.shape[0]] + image_dimensions)
 
-for i in range(fALFF.shape[0]):
-    if i % 100 == 0:
-        print str(i) + '/' + str(fALFF.shape[0])
+print ''
+print '==> constructing full 3D images from coordinate values'
+for i in tqdm(range(fALFF.shape[0])):
     for j in range(fALFF.shape[1]):
         images[tuple([i] + coord[j].tolist())] = fALFF[i, j]
 
@@ -61,10 +81,6 @@ train_labels = labels[:train_num]
 val_labels = labels[train_num:train_num+val_num]
 test_labels = labels[-test_num:]
 
-save_to_h5('train_images.h5', train_images)
-save_to_h5('val_images.h5', val_images)
-save_to_h5('test_images.h5', test_images)
-
-save_to_h5('train_labels.h5', train_labels)
-save_to_h5('val_labels.h5', val_labels)
-save_to_h5('test_labels.h5', test_labels)
+save_to_record(train_images, train_labels)
+save_to_record(val_images, val_labels, split='val')
+save_to_record(test_images, test_labels, split='test')
