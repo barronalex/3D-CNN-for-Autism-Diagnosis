@@ -4,6 +4,8 @@ import pandas as pd
 import tensorflow as tf
 from tqdm import tqdm
 
+import sys
+
 DATA_DIR = 'data/'
 
 image_dimensions = [91, 109, 91]

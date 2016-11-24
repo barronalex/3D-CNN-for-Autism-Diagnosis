@@ -5,18 +5,16 @@ IMAGE_DIMS = [96, 112, 96]
 
 def distort_image(image):
 
-    distorted_image = tf.image.random_flip_left_right(image)
+    #distorted_image = tf.image.random_flip_left_right(image)
 
-    distorted_image = tf.image.random_contrast(distorted_image)
+    #distorted_image = tf.image.random_contrast(distorted_image)
 
 
     return image
 
 
 # Adapted from https://indico.io/blog/tensorflow-data-inputs-part1-placeholders-protobufs-queues/
-def read_and_decode_single_example(filename, train=True):
-    filename_queue = tf.train.string_input_producer([filename],
-                                                    num_epochs=None)
+def read_and_decode_single_example(filename_queue, train=True):
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
     features = tf.parse_single_example(
@@ -30,7 +28,6 @@ def read_and_decode_single_example(filename, train=True):
     image = features['image']
     image = tf.reshape(image, IMAGE_DIMS)
 
-    # distort image
     if train:
         image = distort_image(image)
 

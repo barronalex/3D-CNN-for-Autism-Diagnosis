@@ -38,7 +38,7 @@ def conv3d_transpose(inputs, kernel_size, num_channels, num_filters, scope='', s
         out_width = get_deconv_dim(width, stride, kernel_size, padding)
         out_depth = get_deconv_dim(depth, stride, kernel_size, padding)
 
-        output_shape = int(batch_size), int(out_height), int(out_width), int(out_depth), int(num_filters)
+        output_shape = tf.pack([tf.shape(inputs)[0], int(out_height), int(out_width), int(out_depth), int(num_filters)])
 
         output = tf.nn.conv3d_transpose(inputs, weights, output_shape, [1, stride, stride, stride, 1], padding=padding)
         

@@ -13,7 +13,6 @@ import time
 
 slim = tf.contrib.slim
 
-IMAGE_DIMENSIONS = [96, 112, 96]
 DATA_DIR = 'data'
 
 LR = 0.001
@@ -29,7 +28,7 @@ NUM_FILTERS = 8
 MODE = 'pretrain'
 
 def _save_images(images, outputs, name, depth=50):
-    for i in range(images.shape[0]):
+    for i in range(2):
         fig = plt.figure()
         a = fig.add_subplot(1,2,1)
         imgplot = plt.imshow(images[i,depth,:,:])
@@ -106,16 +105,13 @@ def inference(images, mode='pretrain'):
     else:
         flattened = slim.flatten(forward4)
     
-        self.flat = flattened
-
         print flattened.get_shape()
 
         with tf.variable_scope('fully_connected'):
             # fully connected layer
-            output = slim.fully_connected(flattened, 500, weights_regularizer=slim.l2_regularizer(self.config.l2))
-            self.first_out = output
-            output = slim.fully_connected(output, 500, weights_regularizer=slim.l2_regularizer(self.config.l2))
-            output = slim.fully_connected(output, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
+            output = slim.fully_connected(flattened, 500, weights_regularizer=slim.l2_regularizer(L2))
+            output = slim.fully_connected(output, 500, weights_regularizer=slim.l2_regularizer(L2))
+            output = slim.fully_connected(output, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(L2))
 
     return output
 
