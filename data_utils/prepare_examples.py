@@ -17,7 +17,7 @@ test_split = 0.2
 
 assert train_split + val_split + test_split == 1
 
-def save_to_record(images, labels, split='train'):
+def save_to_record(images, labels, ages, split='train'):
     print ''
     print '==> saving ' + split + ' data into tf records file'
     writer = tf.python_io.TFRecordWriter(DATA_DIR + '/mri' + '_' + split + '.tfrecords')
@@ -25,14 +25,23 @@ def save_to_record(images, labels, split='train'):
     for i in tqdm(range(len(images))):
         image = images[i]
         label = labels[i]
+        age = ages[i]
+        sex = sexes[i]
 
         example = tf.train.Example(
                 features = tf.train.Features(
                     feature ={
                         'label': tf.train.Feature(
-                            int64_list=tf.train.Int64List(value=[label])),
+                            int64_list=tf.train.Int64List(value=[label])
+                            ),
                         'image': tf.train.Feature(
                             float_list=tf.train.FloatList(value=image.flatten())
+                            ),
+                        'age': tf.train.Feature(
+                            float_list=tf.train.FloatList(value=[age])
+                            ),
+                        'sex': tf.train.Feature(
+                            int64_list=tf.train.Int64List(value=[sex])
                             )
                     }
                 )
@@ -70,19 +79,25 @@ for i in tqdm(range(fALFF.shape[0])):
 
 images = np.pad(images, ((0,0),(5,0),(3,0),(5,0)), 'constant', constant_values=0)
 
-train_images = images[:train_num]
-val_images = images[train_num:train_num+val_num]
-test_images = images[-test_num:]
+def split_data(data):
+    return data[:train_num], data[train_num:train_num+val_num], data[-test_num:]
+
+train_images, val_images, test_images = split_data(images)
 
 phenotype_data = pd.read_csv(DATA_DIR + 'phenotype_data.csv', header=None)
 phenotype_data = phenotype_data.as_matrix()
 
+# 0 is autistic, 1 is control
 labels = np.array(phenotype_data[:,2] - 1, dtype=int)
+ages = np.array(phenotype_data[:,4], dtype=float)
+# 0 is male, 1 is female
+sexes = np.array(phenotype_data[:,5] - 1, dtype=int)
 
-train_labels = labels[:train_num]
-val_labels = labels[train_num:train_num+val_num]
-test_labels = labels[-test_num:]
+train_labels, val_labels, test_labels = split_data(labels)
+train_ages, val_ages, test_ages = split_data(ages)
+train_sexes, val_sexes, test_sexes = split_data(sexes)
 
-save_to_record(train_images, train_labels)
-save_to_record(val_images, val_labels, split='val')
-save_to_record(test_images, test_labels, split='test')
+
+save_to_record(train_images, train_labels, train_ages, train_sexes)
+save_to_record(val_images, val_labels, val_ages, val_sexes, split='val')
+save_to_record(test_images, test_labels, test_ages, test_sexes, split='test')

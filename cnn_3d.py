@@ -6,7 +6,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
-from conv_utils import conv3d, conv3d_transpose
+from nn_utils import conv3d, conv3d_transpose
 
 import sys
 import time
@@ -16,7 +16,7 @@ slim = tf.contrib.slim
 DATA_DIR = 'data'
 
 LR = 0.001
-L2 = 0.0001
+L2 = 0.0
 HIDDEN_SIZE = 100
 MAX_EPOCHS = 100
 EARLY_STOPPING = 20
@@ -24,20 +24,21 @@ DROPOUT = 0.8
 
 KERNEL_SIZE = 3 
 NUM_FILTERS = 8
+DOWNSAMPLE_EVERY = 2
 
 MODE = 'pretrain'
 
-def _save_images(images, outputs, name, depth=50):
-    for i in range(2):
-        fig = plt.figure()
-        a = fig.add_subplot(1,2,1)
-        imgplot = plt.imshow(images[i,depth,:,:])
-        a.set_title('Original')
-        a = fig.add_subplot(1,2,2)
-        imgplot = plt.imshow(outputs[i,depth,:,:])
-        a.set_title('Reconstructed')
-        fig.savefig('figures/' + name + str(i) + ".png")
-        plt.close()
+def _save_images(images, outputs, name):
+    depth = images.shape[1]/2
+    fig = plt.figure()
+    a = fig.add_subplot(1,2,1)
+    imgplot = plt.imshow(images[0,depth,:,:])
+    a.set_title('Original')
+    a = fig.add_subplot(1,2,2)
+    imgplot = plt.imshow(outputs[0,depth,:,:])
+    a.set_title('Reconstructed')
+    fig.savefig('figures/' + name + ".png")
+    plt.close()
 
 def predictions(output):
     """Get answer predictions from output"""
@@ -60,53 +61,36 @@ def train_op(loss):
     train_op = tf.train.AdamOptimizer(learning_rate=LR).minimize(loss)
     return train_op
 
-def inference(images, mode='pretrain'):
-
-    if mode == 'pretrain':
-        trainable = True
-    else:
-        trainable = False
-
-    #for i in range(self.config.num_layers):
-        #stride = 1 if i % 2 == 0 else 2
-        #forward = conv3d(forward, 3, 15, 15, scope='conv_2', stride=stride, trainable=trainable)
+def inference(images, num_layers, num_layers_to_train, mode='pretrain', train=True):
 
     images = tf.expand_dims(images, -1)
 
-    forward1 = conv3d(images, KERNEL_SIZE, 1, NUM_FILTERS, scope='conv_1', trainable=trainable)
-    forward2 = conv3d(forward1, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS, scope='conv_2', stride=2, trainable=trainable)
+    # conv
+    trainable = True if num_layers_to_train >= num_layers and mode == 'pretrain' else False
+    forward = conv3d(images, KERNEL_SIZE, 1, NUM_FILTERS,
+            scope='conv_1', trainable=trainable)
 
-    forward2 = slim.dropout(forward2)
-
-    forward3 = conv3d(forward2, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS, scope='conv_3', trainable=trainable)
-    forward4 = conv3d(forward3, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS, scope='conv_4', stride=2, trainable=trainable)
-
-    forward4 = slim.dropout(forward4)
-
-    print forward4.get_shape()
-
-    #forward5 = conv3d(forward4, 3, NUM_FILTERS, NUM_FILTERS, scope='conv_5', trainable=trainable)
-    #forward6 = conv3d(forward5, 3, NUM_FILTERS, NUM_FILTERS, scope='conv_6', stride=2, trainable=trainable)
-
-    #forward6 = slim.dropout(forward6)
+    for i in range(num_layers - 1):
+        stride = 2 if i % DOWNSAMPLE_EVERY == 0 else 1
+        trainable = True if i+2 > num_layers - num_layers_to_train and mode == 'pretrain' else False
+        forward = conv3d(forward, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS,
+                scope='conv_' + str(i+2), stride=stride, trainable=trainable)
+        if stride == 2:
+            forward = slim.dropout(forward, is_training=train)
 
     if mode == 'pretrain':
-        #backward1 = conv3d_transpose(forward6, 3, NUM_FILTERS, NUM_FILTERS, scope='conv_6')
-        #backward2 = conv3d_transpose(backward1, 3, NUM_FILTERS, NUM_FILTERS, scope='conv_5', stride=2)
-
-        backward3 = conv3d_transpose(forward4, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS, scope='conv_4')
-        backward4 = conv3d_transpose(backward3, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS, scope='conv_3', stride=2)
-
-        backward5 = conv3d_transpose(backward4, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS, scope='conv_2')
-        backward6 = conv3d_transpose(backward5, KERNEL_SIZE, NUM_FILTERS, 1, scope='conv_1', stride=2)
-
-        output = tf.squeeze(backward6)
-
+        backward = forward
+        # deconv
+        for i in range(num_layers - 1):
+            stride = 1 if i % DOWNSAMPLE_EVERY == 0 else 2
+            backward = conv3d_transpose(backward, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS,
+                    scope='conv_' + str(num_layers - i), stride=stride)
+        backward = conv3d_transpose(backward, KERNEL_SIZE, NUM_FILTERS, 1, scope='conv_1', stride=2)
+        output = tf.squeeze(backward)
     else:
-        flattened = slim.flatten(forward4)
-    
-        print flattened.get_shape()
 
+        flattened = slim.flatten(forward)
+    
         with tf.variable_scope('fully_connected'):
             # fully connected layer
             output = slim.fully_connected(flattened, 500, weights_regularizer=slim.l2_regularizer(L2))

@@ -1,2 +1,2 @@
-model_checkpoint_path: "cae_supervised.weights"
-all_model_checkpoint_paths: "cae_supervised.weights"
+model_checkpoint_path: "cae_pretrain_6.weights"
+all_model_checkpoint_paths: "cae_pretrain_6.weights"
