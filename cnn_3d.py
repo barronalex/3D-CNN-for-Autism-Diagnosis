@@ -15,12 +15,11 @@ slim = tf.contrib.slim
 
 DATA_DIR = 'data'
 
-LR = 0.001
-L2 = 0.0
-HIDDEN_SIZE = 100
+LR = 0.0001
+L2 = 0.001
 MAX_EPOCHS = 100
 EARLY_STOPPING = 20
-DROPOUT = 0.8
+DROPOUT = 0.9
 
 KERNEL_SIZE = 3 
 NUM_FILTERS = 8
@@ -29,13 +28,14 @@ DOWNSAMPLE_EVERY = 2
 MODE = 'pretrain'
 
 def _save_images(images, outputs, name):
-    depth = images.shape[1]/2
+    im_depth = images.shape[1]/2
+    out_depth = outputs.shape[1]/2
     fig = plt.figure()
     a = fig.add_subplot(1,2,1)
-    imgplot = plt.imshow(images[0,depth,:,:])
+    imgplot = plt.imshow(images[0,im_depth,:,:])
     a.set_title('Original')
     a = fig.add_subplot(1,2,2)
-    imgplot = plt.imshow(outputs[0,depth,:,:])
+    imgplot = plt.imshow(outputs[0,out_depth,:,:,0])
     a.set_title('Reconstructed')
     fig.savefig('figures/' + name + ".png")
     plt.close()
@@ -66,17 +66,17 @@ def inference(images, num_layers, num_layers_to_train, mode='pretrain', train=Tr
     images = tf.expand_dims(images, -1)
 
     # conv
-    trainable = True if num_layers_to_train >= num_layers and mode == 'pretrain' else False
+    trainable = True if num_layers_to_train >= num_layers else False
     forward = conv3d(images, KERNEL_SIZE, 1, NUM_FILTERS,
             scope='conv_1', trainable=trainable)
 
     for i in range(num_layers - 1):
         stride = 2 if i % DOWNSAMPLE_EVERY == 0 else 1
-        trainable = True if i+2 > num_layers - num_layers_to_train and mode == 'pretrain' else False
+        trainable = True if i+2 > num_layers - num_layers_to_train else False
         forward = conv3d(forward, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS,
                 scope='conv_' + str(i+2), stride=stride, trainable=trainable)
         if stride == 2:
-            forward = slim.dropout(forward, is_training=train)
+            forward = slim.dropout(forward, keep_prob=DROPOUT, is_training=train)
 
     if mode == 'pretrain':
         backward = forward
@@ -93,9 +93,9 @@ def inference(images, num_layers, num_layers_to_train, mode='pretrain', train=Tr
     
         with tf.variable_scope('fully_connected'):
             # fully connected layer
-            output = slim.fully_connected(flattened, 500, weights_regularizer=slim.l2_regularizer(L2))
+            output = slim.fully_connected(flattened, 2000, weights_regularizer=slim.l2_regularizer(L2))
             output = slim.fully_connected(output, 500, weights_regularizer=slim.l2_regularizer(L2))
             output = slim.fully_connected(output, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(L2))
 
-    return output
+    return output, forward
 

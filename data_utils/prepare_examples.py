@@ -17,7 +17,7 @@ test_split = 0.2
 
 assert train_split + val_split + test_split == 1
 
-def save_to_record(images, labels, ages, split='train'):
+def save_to_record(images, labels, ages, sexes, split='train'):
     print ''
     print '==> saving ' + split + ' data into tf records file'
     writer = tf.python_io.TFRecordWriter(DATA_DIR + '/mri' + '_' + split + '.tfrecords')
@@ -79,7 +79,12 @@ for i in tqdm(range(fALFF.shape[0])):
 
 images = np.pad(images, ((0,0),(5,0),(3,0),(5,0)), 'constant', constant_values=0)
 
+np.random.seed(23) #for reproducibility
+p = np.random.permutation(train_num + val_num)
+
 def split_data(data):
+    # randomly permute train and val data
+    data[:len(p)] = data[p]
     return data[:train_num], data[train_num:train_num+val_num], data[-test_num:]
 
 train_images, val_images, test_images = split_data(images)

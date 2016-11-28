@@ -8,22 +8,16 @@ IMAGE_DIMS = [96, 112, 96]
 
 def distort_image(image):
 
-    #distorted_image = tf.image.random_flip_left_right(image)
-    #
-
-    #distorted_image = tf.image.random_contrast(distorted_image)
-
-    # let's start with random rotations and reflections
-    # and scaling the saturation perhaps
-
+    # randomly choose an axis of rotation
+    axis = 0
 
     image = tf.expand_dims(image, -1)
 
-    image = tf.split(0, int(image.get_shape()[0]), image)
-    image = [tf.squeeze(im, squeeze_dims=[0]) for im in image]
+    image = tf.split(axis, image.get_shape()[axis].value, image)
+    image = [tf.squeeze(im, squeeze_dims=[axis]) for im in image]
 
     # rotate image by a random angle between 0 and pi
-    angle = tf.random_uniform((), 0, 3.141)
+    angle = tf.random_uniform((), 0, 2*3.141)
     image = [rotate_image_tensor(im, angle) for im in image]
 
     image = tf.pack(image)
@@ -57,6 +51,3 @@ def read_and_decode_single_example(filename_queue, train=True, downsample_factor
         image = distort_image(image)
 
     return image, label
-
-if __name__ == '__main__':
-    read_and_decode_single_example('data/mri.tfrecords')

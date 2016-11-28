@@ -11,8 +11,8 @@ from test_cnn import *
 import sys
 
 BATCH_SIZE = 15
-MAX_STEPS = 10000
-SAVE_EVERY = 100
+MAX_STEPS = 100000
+SAVE_EVERY = 1000
 MIN_IMAGES_IN_QUEUE = 1000
 
 parser = argparse.ArgumentParser()
@@ -33,9 +33,15 @@ if args.num_layers_to_train == -1:
 
 def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
         num_layers_to_train=2, downsample_factor=1):
+
+    intro_str = '==> building 3D CNN with %d layers'
+    print intro_str % (num_layers)
+
     fn = 'data/mri_train.tfrecords'
     filename_queue = tf.train.string_input_producer([fn], num_epochs=None)
-    image, label = mri_input.read_and_decode_single_example(filename_queue, downsample_factor=1)
+
+    with tf.device('/cpu:0'):
+        image, label = mri_input.read_and_decode_single_example(filename_queue, downsample_factor=1)
 
     image_batch, label_batch = tf.train.shuffle_batch(
         [image, label], batch_size=BATCH_SIZE,
@@ -46,7 +52,7 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
     # train as auto-encoder in pretraining
     label_batch = image_batch if mode == 'pretrain' else label_batch
 
-    outputs = cnn_3d.inference(image_batch, num_layers, num_layers_to_train, mode)
+    outputs, filt = cnn_3d.inference(image_batch, num_layers, num_layers_to_train, mode)
 
     loss = cnn_3d.loss(outputs, label_batch, mode)
 
@@ -62,7 +68,7 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
     for v in pretrained_vars:
         print v.name
     print '==> variables to be trained:'
-    for v in tf.all_variables():
+    for v in tf.trainable_variables():
         print v.name
 
 
@@ -71,7 +77,6 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
     init = tf.initialize_all_variables()
     sess.run(init)
 
-    saver = tf.train.Saver()
 
     if num_layers_to_restore > 0:
         restorer = tf.train.Saver(pretrained_vars)
@@ -80,6 +85,10 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
         assert os.path.exists(path)
         restorer.restore(sess, path)
 
+    saver = tf.train.Saver()
+    saver.save(sess, 
+        'weights/cae_' + mode + '.weights')
+
     tf.train.start_queue_runners(sess=sess)
 
     train_accuracy = 0
@@ -87,8 +96,8 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
 
     for step in xrange(MAX_STEPS):
         start_time = time.time()
-        _, loss_value, pred_value, labels_value, image_value, output_value = sess.run(
-                [train_op, loss, predictions, label_batch, image_batch, outputs])
+        _, loss_value, pred_value, labels_value, image_value, output_value, filter_val = sess.run(
+                [train_op, loss, predictions, label_batch, image_batch, outputs, filt])
         train_accuracy += np.sum(pred_value == labels_value)/float(pred_value.shape[0])
         duration = time.time() - start_time
 
@@ -104,6 +113,8 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
 
         if (step % SAVE_EVERY == 0 or (step + 1) == MAX_STEPS) and step != 0:
             if mode == 'supervised':
+                saver.save(sess, 
+                        'weights/cae_' + mode + '.weights')
                 print '==> evaluating valid and train accuracy'
                 val_accuracy, val_loss = test_cnn(num_layers, mode=mode)
 
@@ -115,12 +126,13 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
                     best_val_loss = val_loss
                     print '==> saving weights'
                     saver.save(sess, 
-                            'weights/cae_' + mode + '.weights')
+                            'weights/cae_' + mode + '_best.weights')
 
+                cnn_3d._save_images(image_value, filter_val, 'new_' + str(step))
             else:
-                cnn_3d._save_images(image_value, output_value, 'new_' + str(step) + '_')
                 saver.save(sess, 
                         'weights/cae_' + mode + '_' + str(num_layers) + '.weights')
+                cnn_3d._save_images(image_value, output_value, 'new_' + str(step))
     sess.close()
 
 if __name__ == '__main__':

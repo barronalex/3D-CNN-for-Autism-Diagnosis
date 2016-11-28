@@ -20,7 +20,9 @@ def test_cnn(num_layers, dataset='val', mode='supervised'):
         fn = 'data/mri_{}.tfrecords'.format(dataset)
         filename_queue = tf.train.string_input_producer([fn], num_epochs=1)
 
-        image, label = mri_input.read_and_decode_single_example(filename_queue, train=False)
+        with tf.device('/cpu:0'):
+            image, label = mri_input.read_and_decode_single_example(filename_queue, train=False)
+
         image_batch, label_batch = tf.train.batch(
             [image, label], batch_size=BATCH_SIZE,
             capacity=100,
@@ -30,15 +32,11 @@ def test_cnn(num_layers, dataset='val', mode='supervised'):
         # train as auto-encoder in pretraining
         label_batch = image_batch if mode == 'pretrain' else label_batch
 
-        outputs = cnn_3d.inference(image_batch, num_layers, 0, mode, False)
+        outputs, filt = cnn_3d.inference(image_batch, num_layers, 0, mode, False)
 
         loss = cnn_3d.loss(outputs, label_batch, mode)
 
         predictions = cnn_3d.predictions(outputs)
-
-        print '==> variables to be trained:'
-        for v in tf.all_variables():
-            print v.name
 
         restorer = tf.train.Saver()
 
@@ -70,7 +68,8 @@ def test_cnn(num_layers, dataset='val', mode='supervised'):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dataset', default='val')
+    parser.add_argument('-l', '--num-layers', default=6)
     args = parser.parse_args()
-    test_cnn(dataset=args.dataset)
+    test_cnn(args.num_layers, dataset=args.dataset)
 
 

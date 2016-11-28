@@ -73,6 +73,7 @@ def rotate_image_tensor(image, angle, mode='black'):
     mode = 'ones' results in value 1 in unknown areas
     mode = 'repeat' keeps repeating the closest pixel known
     """
+    # likely a problem with the shape of the image
     s = image.get_shape().as_list()
     assert len(s) == 3, "Input needs to be 3D."
     assert (mode == 'repeat') or (mode == 'black') or (mode == 'white') or (mode == 'ones'), "Unknown boundary mode."
