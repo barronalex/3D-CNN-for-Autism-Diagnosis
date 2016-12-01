@@ -22,9 +22,11 @@ args = parser.parse_args()
 # only need to test the cnn when 
 def test_cnn(mode='supervised', num_layers=2,
         num_layers_to_train=2, downsample_factor=1,
-        use_sex_labels=False, dataset='val', start_step=0, best=False):
+        use_sex_labels=False, dataset='val', start_step=0):
 
     test_graph = tf.Graph()
+
+    best = True if dataset == 'test' else False
 
     params = [mode, num_layers, num_layers_to_train, downsample_factor, use_sex_labels]
     param_names = ['mode', 'num_layers', 'num_layers_to_train', 'downsample_factor', 'use_sex_labels']

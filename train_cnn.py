@@ -13,9 +13,9 @@ import sys
 
 BATCH_SIZE = 15
 MAX_STEPS = 100000
-SAVE_EVERY = 250
+SAVE_EVERY = 100
 MIN_IMAGES_IN_QUEUE = 1000
-EARLY_STOPPING = 20
+EARLY_STOPPING = 100
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--mode", default="supervised")

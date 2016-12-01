@@ -109,6 +109,21 @@ class CNN_3D():
 
         return output, forward
 
+    def add_summaries(self, images, train):
+        dataset = 'train' if train else 'validation'
+        tf.scalar_summary('loss', self.loss)
+        tf.scalar_summary('accuracy', self.accuracy)
+        filt_depth = int(self.filt.get_shape()[1])/2
+        im_depth = int(images.get_shape()[1])/2
+        filt = tf.squeeze(
+                tf.slice(self.filt, [0, filt_depth, 0, 0, 0], [-1, 1, -1, -1, 1])
+                , [3])
+        image = tf.squeeze(
+                tf.slice(images, [0, im_depth, 0, 0], [-1, 1, -1, -1])
+                )
+        tf.image_summary('filter', filt)
+        tf.image_summary('image', tf.expand_dims(image, -1))
+
     def __init__(self, image_batch, label_batch, num_layers, mode, num_layers_to_train=0, train=True):
         label_batch = image_batch if mode == 'pretrain' else label_batch
         self.outputs, self.filt = self.inference(image_batch, num_layers, num_layers_to_train, mode, train)
@@ -116,9 +131,7 @@ class CNN_3D():
         self.predictions = self.make_predictions(self.outputs)
         self.accuracy = self.calc_accuracy(self.predictions, label_batch)
         self.train_op = self.add_train_op(self.loss)
-        dataset = 'train' if train else 'validation'
-        tf.scalar_summary(dataset + ' loss', self.loss)
-        tf.scalar_summary(dataset + ' accuracy', self.accuracy)
+        self.add_summaries(image_batch, train)
         self.merged = tf.merge_all_summaries()
         
 
