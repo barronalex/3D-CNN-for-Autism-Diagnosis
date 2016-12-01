@@ -34,20 +34,25 @@ def read_and_decode_single_example(filename_queue, train=True, downsample_factor
         serialized_example,
         features={
             'label': tf.FixedLenFeature([], tf.int64),
+            'sex': tf.FixedLenFeature([], tf.int64),
             'image': tf.FixedLenFeature(np.prod(IMAGE_DIMS), tf.float32)
         })
     # now return the converted data
     label = features['label']
+    sex = features['sex']
     image = features['image']
     image = tf.reshape(image, IMAGE_DIMS)
 
     if downsample_factor > 1:
+        image = tf.expand_dims(image, -1)
+        image = tf.expand_dims(image, 0)
         image = tf.nn.avg_pool3d(image, 
                 [1,downsample_factor,downsample_factor,downsample_factor,1],
                 [1,downsample_factor,downsample_factor,downsample_factor,1],
                 'SAME')
+        image = tf.squeeze(image)
 
     if train:
         image = distort_image(image)
 
-    return image, label
+    return image, label, sex

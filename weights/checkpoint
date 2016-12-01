@@ -1,2 +1,3 @@
-model_checkpoint_path: "cae_supervised.weights"
-all_model_checkpoint_paths: "cae_supervised.weights"
+model_checkpoint_path: "cnn_mode=supervised_num_layers=4_num_layers_to_train=4_downsample_factor=2_use_sex_labels=True_best"
+all_model_checkpoint_paths: "cnn_mode=supervised_num_layers=4_num_layers_to_train=4_downsample_factor=2_use_sex_labels=True"
+all_model_checkpoint_paths: "cnn_mode=supervised_num_layers=4_num_layers_to_train=4_downsample_factor=2_use_sex_labels=True_best"

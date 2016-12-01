@@ -4,16 +4,33 @@ import numpy as np
 import os
 import argparse
 
-import cnn_3d
+from cnn_3d import CNN_3D
 import mri_input
+import nn_utils
 
 BATCH_SIZE = 15
 NUM_EXAMPLES = {'train': 749, 'val': 107, 'test': 215}
 
+parser = argparse.ArgumentParser()
+parser.add_argument('-m', '--mode', default='supervised')
+parser.add_argument('-s', '--dataset-split', default='val')
+parser.add_argument('-l', '--num-layers', type=int, default=6)
+parser.add_argument('-t', '--num_layers_to_train', type=int, default=-1) 
+parser.add_argument('-d', '--downsample_factor', type=int, default=1)
+args = parser.parse_args()
+
 # only need to test the cnn when 
-def test_cnn(num_layers, dataset='val', mode='supervised'):
+def test_cnn(mode='supervised', num_layers=2,
+        num_layers_to_train=2, downsample_factor=1,
+        use_sex_labels=False, dataset='val', start_step=0, best=False):
 
     test_graph = tf.Graph()
+
+    params = [mode, num_layers, num_layers_to_train, downsample_factor, use_sex_labels]
+    param_names = ['mode', 'num_layers', 'num_layers_to_train', 'downsample_factor', 'use_sex_labels']
+    restore_path = nn_utils.get_save_path(params, param_names)
+    if best:
+        restore_path += '_best'
 
     with test_graph.as_default():
 
@@ -21,55 +38,55 @@ def test_cnn(num_layers, dataset='val', mode='supervised'):
         filename_queue = tf.train.string_input_producer([fn], num_epochs=1)
 
         with tf.device('/cpu:0'):
-            image, label = mri_input.read_and_decode_single_example(filename_queue, train=False)
+            image, label, sex = mri_input.read_and_decode_single_example(filename_queue, train=False,
+                    downsample_factor=downsample_factor)
 
-        image_batch, label_batch = tf.train.batch(
-            [image, label], batch_size=BATCH_SIZE,
-            capacity=100,
-            allow_smaller_final_batch=True
-            )
+            image_batch, label_batch, sex_batch = tf.train.batch(
+                [image, label, sex], batch_size=BATCH_SIZE,
+                capacity=100,
+                allow_smaller_final_batch=True
+                )
 
-        # train as auto-encoder in pretraining
-        label_batch = image_batch if mode == 'pretrain' else label_batch
+        label_batch = sex_batch if use_sex_labels else label_batch 
 
-        outputs, filt = cnn_3d.inference(image_batch, num_layers, 0, mode, False)
-
-        loss = cnn_3d.loss(outputs, label_batch, mode)
-
-        predictions = cnn_3d.predictions(outputs)
-
-        restorer = tf.train.Saver()
+        cnn = CNN_3D(image_batch, label_batch, num_layers, mode, train=False)
 
         sess = tf.Session()
+
+        summary_writer = tf.train.SummaryWriter('summaries/{}/test'.format(restore_path[8:]))
 
         init = tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
         sess.run(init)
 
-        if os.path.exists('weights/cae_pretrain.weights'):
-            restorer.restore(sess, 'weights/cae_{}.weights'.format(mode))
+        restorer = tf.train.Saver()
+
+        assert os.path.exists(restore_path)
+        print 'restoring from', restore_path
+        restorer.restore(sess, restore_path)
 
         tf.train.start_queue_runners(sess=sess)
 
         step = 0
-        accuracy = 0
+        val_accuracy = 0
         overall_loss = 0
         try:
             while True:
-                loss_value, pred_value, labels_value, output_val = sess.run([loss, predictions, label_batch, outputs])
-                #print np.sum(labels_value)
-                accuracy += np.sum(pred_value == labels_value)/float(pred_value.shape[0])
+                loss_value, accuracy, output_val, summary = sess.run([
+                    cnn.loss,
+                    cnn.accuracy,
+                    cnn.outputs,
+                    cnn.merged])
+                val_accuracy += accuracy
                 overall_loss += loss_value
-                #print np.sum(pred_value == labels_value)/float(pred_value.shape[0])
-
+                summary_writer.add_summary(summary, start_step + step)
                 step += 1
         except tf.errors.OutOfRangeError:
-            return accuracy/float(step), overall_loss/float(step)
+            return val_accuracy/float(step), overall_loss/float(step)
         
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--dataset', default='val')
-    parser.add_argument('-l', '--num-layers', default=6)
-    args = parser.parse_args()
-    test_cnn(args.num_layers, dataset=args.dataset)
+    accuracy, loss = test_cnn(args.mode, args.num_layers, args.num_layers_to_train,
+            args.downsample_factor, dataset=args.dataset_split)
+    print args.dataset_split, 'accuracy:', accuracy
+    print args.dataset_split, 'loss:', loss
 
 

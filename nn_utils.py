@@ -144,3 +144,9 @@ def rotate_image_tensor(image, angle, mode='black'):
     image_rotated = tf.transpose(tf.pack(image_rotated_channel_list), [1, 2, 0])
 
     return image_rotated
+
+def get_save_path(params, param_names):
+    path = 'weights/cnn'
+    for i in range(len(params)):
+        path += '_' + param_names[i] + '=' + str(params[i])
+    return path

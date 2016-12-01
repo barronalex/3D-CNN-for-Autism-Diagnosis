@@ -4,61 +4,59 @@ import argparse
 import time
 import os
 
-import cnn_3d
+from cnn_3d import CNN_3D
 import mri_input
 from test_cnn import *
+import nn_utils
 
 import sys
 
 BATCH_SIZE = 15
 MAX_STEPS = 100000
-SAVE_EVERY = 1000
+SAVE_EVERY = 250
 MIN_IMAGES_IN_QUEUE = 1000
+EARLY_STOPPING = 20
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-m", "--mode", default="pretrain")
+parser.add_argument("-m", "--mode", default="supervised")
 parser.add_argument("-l", "--num-layers", type=int, default=4)
-parser.add_argument("-r", "--num-layers-to-restore", type=int, default=-1)
+parser.add_argument("-r", "--num-layers-to-restore", type=int, default=0)
 parser.add_argument("-t", "--num-layers-to-train", type=int, default=-1, 
         help="trains the specified number of innermost layers")
 parser.add_argument("-d", "--downsample_factor", type=int, default=1)
+parser.add_argument("-s", "--use_sex_labels", type=bool, default=False)
 args = parser.parse_args()
 
-if args.num_layers_to_restore == -1:
-    args.num_layers_to_restore = args.num_layers
-
-if args.num_layers_to_train == -1:
-    args.num_layers_to_train = args.num_layers - args.num_layers_to_restore
 
 
-def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
-        num_layers_to_train=2, downsample_factor=1):
+def train_cnn(mode='supervised', num_layers=2, num_layers_to_restore=2,
+        num_layers_to_train=2, downsample_factor=1, use_sex_labels=False):
+
+    params = [mode, num_layers, num_layers_to_train, downsample_factor, use_sex_labels]
+    param_names = ['mode', 'num_layers', 'num_layers_to_train', 'downsample_factor', 'use_sex_labels']
+    save_path = nn_utils.get_save_path(params, param_names)
 
     intro_str = '==> building 3D CNN with %d layers'
     print intro_str % (num_layers)
+    if use_sex_labels:
+        print 'Debugging by training on gender labels'
 
     fn = 'data/mri_train.tfrecords'
     filename_queue = tf.train.string_input_producer([fn], num_epochs=None)
 
     with tf.device('/cpu:0'):
-        image, label = mri_input.read_and_decode_single_example(filename_queue, downsample_factor=1)
+        image, label, sex = mri_input.read_and_decode_single_example(filename_queue, downsample_factor=downsample_factor)
 
-    image_batch, label_batch = tf.train.shuffle_batch(
-        [image, label], batch_size=BATCH_SIZE,
-        capacity=10000,
-        min_after_dequeue=MIN_IMAGES_IN_QUEUE
-        )
+        image_batch, label_batch, sex_batch = tf.train.shuffle_batch(
+            [image, label, sex], batch_size=BATCH_SIZE,
+            capacity=10000,
+            min_after_dequeue=MIN_IMAGES_IN_QUEUE
+            )
 
-    # train as auto-encoder in pretraining
-    label_batch = image_batch if mode == 'pretrain' else label_batch
+    label_batch = sex_batch if use_sex_labels else label_batch 
 
-    outputs, filt = cnn_3d.inference(image_batch, num_layers, num_layers_to_train, mode)
-
-    loss = cnn_3d.loss(outputs, label_batch, mode)
-
-    predictions = cnn_3d.predictions(outputs)
-
-    train_op = cnn_3d.train_op(loss)
+    cnn = CNN_3D(image_batch, label_batch, num_layers, mode,
+            num_layers_to_train)
 
     # only restore layers that were previously trained
     pretrained_names = ['conv_' + str(i+1) + '/weights:0' for i in range(num_layers_to_restore)]
@@ -74,6 +72,8 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
 
     sess = tf.Session()
 
+    summary_writer = tf.train.SummaryWriter('summaries/{}/train'.format(save_path[8:]), sess.graph)
+
     init = tf.initialize_all_variables()
     sess.run(init)
 
@@ -84,10 +84,13 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
         path = 'weights/cae_pretrain_{}.weights'.format(str(num_layers_to_restore))
         assert os.path.exists(path)
         restorer.restore(sess, path)
+    if num_layers_to_restore == -1:
+        restorer = tf.train.Saver()
+        path = 'weights/cae_supervised.weights'
+        assert os.path.exists(path)
+        restorer.restore(sess, path)
 
     saver = tf.train.Saver()
-    saver.save(sess, 
-        'weights/cae_' + mode + '.weights')
 
     tf.train.start_queue_runners(sess=sess)
 
@@ -96,10 +99,17 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
 
     for step in xrange(MAX_STEPS):
         start_time = time.time()
-        _, loss_value, pred_value, labels_value, image_value, output_value, filter_val = sess.run(
-                [train_op, loss, predictions, label_batch, image_batch, outputs, filt])
-        train_accuracy += np.sum(pred_value == labels_value)/float(pred_value.shape[0])
+        _, loss_value, image_value, output_value, accuracy, filter_val, summary = sess.run([
+                    cnn.train_op,
+                    cnn.loss,
+                    image_batch,
+                    cnn.outputs,
+                    cnn.accuracy,
+                    cnn.filt,
+                    cnn.merged])
+        train_accuracy += accuracy
         duration = time.time() - start_time
+        summary_writer.add_summary(summary, step)
 
         if step % 2 == 0:
             num_examples_per_step = BATCH_SIZE
@@ -113,28 +123,32 @@ def train_cnn(mode='pretrain', num_layers=2, num_layers_to_restore=2,
 
         if (step % SAVE_EVERY == 0 or (step + 1) == MAX_STEPS) and step != 0:
             if mode == 'supervised':
-                saver.save(sess, 
-                        'weights/cae_' + mode + '.weights')
+                saver.save(sess, save_path)
                 print '==> evaluating valid and train accuracy'
-                val_accuracy, val_loss = test_cnn(num_layers, mode=mode)
+                val_accuracy, val_loss = test_cnn(mode, num_layers, num_layers_to_train,
+                        downsample_factor, use_sex_labels, start_step=step)
 
                 print 'train accuracy:', train_accuracy/float(SAVE_EVERY) 
                 print 'val accuracy:', val_accuracy
                 train_accuracy = 0
 
                 if val_loss < best_val_loss or best_val_loss is None:
+                    early_stopping_count = 0
                     best_val_loss = val_loss
-                    print '==> saving weights'
-                    saver.save(sess, 
-                            'weights/cae_' + mode + '_best.weights')
+                    print '==> saving weights to', save_path + '_best'
+                    saver.save(sess, save_path + '_best')
+                else:
+                    early_stopping_count += 1
+                    if early_stopping_count >= EARLY_STOPPING: break
 
-                cnn_3d._save_images(image_value, filter_val, 'new_' + str(step))
+                cnn._save_images(image_value, filter_val, 'new_' + str(step))
             else:
                 saver.save(sess, 
                         'weights/cae_' + mode + '_' + str(num_layers) + '.weights')
-                cnn_3d._save_images(image_value, output_value, 'new_' + str(step))
+                cnn._save_images(image_value, output_value, 'new_' + str(step))
     sess.close()
 
 if __name__ == '__main__':
-    train_cnn(args.mode, args.num_layers, args.num_layers_to_restore, args.num_layers_to_train)
-        
+    train_cnn(args.mode, args.num_layers, args.num_layers_to_restore,
+            args.num_layers_to_train, args.downsample_factor, args.use_sex_labels)
+       
