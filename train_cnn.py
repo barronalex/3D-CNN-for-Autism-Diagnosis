@@ -4,48 +4,39 @@ import argparse
 import time
 import os
 
-from cnn_3d import CNN_3D
+from cnn_3d import CNN_3D, Config
 import mri_input
-from test_cnn import *
+from test_cnn import test_cnn
 import nn_utils
 
 import sys
 
 BATCH_SIZE = 15
 MAX_STEPS = 100000
-SAVE_EVERY = 100
-MIN_IMAGES_IN_QUEUE = 1000
+SAVE_EVERY = 10
+MIN_IMAGES_IN_QUEUE = 10
 EARLY_STOPPING = 100
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-m", "--mode", default="supervised")
-parser.add_argument("-l", "--num-layers", type=int, default=4)
-parser.add_argument("-r", "--num-layers-to-restore", type=int, default=0)
-parser.add_argument("-t", "--num-layers-to-train", type=int, default=-1, 
-        help="trains the specified number of innermost layers")
-parser.add_argument("-d", "--downsample_factor", type=int, default=1)
-parser.add_argument("-s", "--use_sex_labels", type=bool, default=False)
-args = parser.parse_args()
 
+print 'wooooooo'
 
+def train_cnn(config):
 
-def train_cnn(mode='supervised', num_layers=2, num_layers_to_restore=2,
-        num_layers_to_train=2, downsample_factor=1, use_sex_labels=False):
+    mode = config.mode
 
-    params = [mode, num_layers, num_layers_to_train, downsample_factor, use_sex_labels]
-    param_names = ['mode', 'num_layers', 'num_layers_to_train', 'downsample_factor', 'use_sex_labels']
-    save_path = nn_utils.get_save_path(params, param_names)
+    save_path = nn_utils.get_save_path(config)
 
     intro_str = '==> building 3D CNN with %d layers'
-    print intro_str % (num_layers)
-    if use_sex_labels:
+    print intro_str % (config.num_layers)
+    if config.use_sex_labels:
         print 'Debugging by training on gender labels'
 
     fn = 'data/mri_train.tfrecords'
     filename_queue = tf.train.string_input_producer([fn], num_epochs=None)
 
     with tf.device('/cpu:0'):
-        image, label, sex, corr = mri_input.read_and_decode_single_example(filename_queue, downsample_factor=downsample_factor)
+        image, label, sex, corr = mri_input.read_and_decode_single_example(filename_queue,
+                downsample_factor=config.downsample_factor)
 
         image_batch, label_batch, sex_batch, corr_batch = tf.train.shuffle_batch(
             [image, label, sex, corr], batch_size=BATCH_SIZE,
@@ -53,19 +44,17 @@ def train_cnn(mode='supervised', num_layers=2, num_layers_to_restore=2,
             min_after_dequeue=MIN_IMAGES_IN_QUEUE
             )
 
-    label_batch = sex_batch if use_sex_labels else label_batch 
+    label_batch = sex_batch if config.use_sex_labels else label_batch 
 
     cnn = CNN_3D(
+            config,
             image_batch,
             label_batch,
             corr_batch,
-            num_layers,
-            mode,
-            num_layers_to_train
             )
 
     # only restore layers that were previously trained
-    pretrained_names = ['conv_' + str(i+1) + '/weights:0' for i in range(num_layers_to_restore)]
+    pretrained_names = ['conv_' + str(i+1) + '/weights:0' for i in range(config.num_layers_to_restore)]
     pretrained_vars = [v for v in tf.all_variables() if v.name in pretrained_names]
 
     print '==> variables to be restored:'
@@ -84,13 +73,13 @@ def train_cnn(mode='supervised', num_layers=2, num_layers_to_restore=2,
     sess.run(init)
 
 
-    if num_layers_to_restore > 0:
+    if config.num_layers_to_restore > 0:
         restorer = tf.train.Saver(pretrained_vars)
         print '==> restoring weights'
         path = 'weights/cae_pretrain_{}.weights'.format(str(num_layers_to_restore))
         assert os.path.exists(path)
         restorer.restore(sess, path)
-    if num_layers_to_restore == -1:
+    if config.num_layers_to_restore == -1:
         restorer = tf.train.Saver()
         path = 'weights/cae_supervised.weights'
         assert os.path.exists(path)
@@ -131,8 +120,7 @@ def train_cnn(mode='supervised', num_layers=2, num_layers_to_restore=2,
             if mode == 'supervised':
                 saver.save(sess, save_path)
                 print '==> evaluating valid and train accuracy'
-                val_accuracy, val_loss = test_cnn(mode, num_layers, num_layers_to_train,
-                        downsample_factor, use_sex_labels, start_step=step)
+                val_accuracy, val_loss = test_cnn(config, start_step=step)
 
                 print 'train accuracy:', train_accuracy/float(SAVE_EVERY) 
                 print 'val accuracy:', val_accuracy
@@ -155,6 +143,24 @@ def train_cnn(mode='supervised', num_layers=2, num_layers_to_restore=2,
     sess.close()
 
 if __name__ == '__main__':
-    train_cnn(args.mode, args.num_layers, args.num_layers_to_restore,
-            args.num_layers_to_train, args.downsample_factor, args.use_sex_labels)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-z", "--test", default=0)
+    parser.add_argument("-m", "--mode", default="supervised")
+    parser.add_argument("-l", "--num-layers", type=int, default=4)
+    parser.add_argument("-r", "--num-layers-to-restore", type=int, default=0)
+    parser.add_argument("-t", "--num-layers-to-train", type=int, default=4, 
+            help="trains the specified number of innermost layers")
+    parser.add_argument("-d", "--downsample_factor", type=int, default=2)
+    parser.add_argument("-s", "--use_sex_labels", type=bool, default=False)
+    parser.add_argument("--use_correlation", type=int, default=0, help="0 indicates no use, 1 supplements, 2 trains on only correlation")
+    args = parser.parse_args()
+    config = Config()
+    config.num_layers = args.num_layers
+    config.num_layers_to_train = args.num_layers_to_train
+    config.mode = args.mode
+    config.num_layers_to_restore = args.num_layers_to_restore
+    config.downsample_factor = args.downsample_factor
+    config.use_sex_labels = args.use_sex_labels
+    #config.use_correlation = args.use_correlation
+    train_cnn(config)
        

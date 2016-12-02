@@ -11,26 +11,15 @@ import nn_utils
 BATCH_SIZE = 15
 NUM_EXAMPLES = {'train': 749, 'val': 107, 'test': 215}
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-m', '--mode', default='supervised')
-parser.add_argument('-s', '--dataset-split', default='val')
-parser.add_argument('-l', '--num-layers', type=int, default=6)
-parser.add_argument('-t', '--num_layers_to_train', type=int, default=-1) 
-parser.add_argument('-d', '--downsample_factor', type=int, default=1)
-args = parser.parse_args()
-
 # only need to test the cnn when 
-def test_cnn(mode='supervised', num_layers=2,
-        num_layers_to_train=2, downsample_factor=1,
-        use_sex_labels=False, dataset='val', start_step=0):
+def test_cnn(config, dataset='val', start_step=0):
 
     test_graph = tf.Graph()
 
     best = True if dataset == 'test' else False
 
-    params = [mode, num_layers, num_layers_to_train, downsample_factor, use_sex_labels]
-    param_names = ['mode', 'num_layers', 'num_layers_to_train', 'downsample_factor', 'use_sex_labels']
-    restore_path = nn_utils.get_save_path(params, param_names)
+    restore_path = nn_utils.get_save_path(config)
+
     if best:
         restore_path += '_best'
 
@@ -41,7 +30,7 @@ def test_cnn(mode='supervised', num_layers=2,
 
         with tf.device('/cpu:0'):
             image, label, sex, corr = mri_input.read_and_decode_single_example(filename_queue, train=False,
-                    downsample_factor=downsample_factor)
+                    downsample_factor=config.downsample_factor)
 
             image_batch, label_batch, sex_batch, corr_batch = tf.train.batch(
                 [image, label, sex, corr], batch_size=BATCH_SIZE,
@@ -49,14 +38,13 @@ def test_cnn(mode='supervised', num_layers=2,
                 allow_smaller_final_batch=True
                 )
 
-        label_batch = sex_batch if use_sex_labels else label_batch 
+        label_batch = sex_batch if config.use_sex_labels else label_batch 
 
         cnn = CNN_3D(
+                config,
                 image_batch,
                 label_batch,
                 corr_batch,
-                num_layers,
-                mode,
                 train=False
                 )
 
@@ -93,9 +81,17 @@ def test_cnn(mode='supervised', num_layers=2,
             return val_accuracy/float(step), overall_loss/float(step)
         
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-m', '--mode', default='supervised')
+    parser.add_argument('-s', '--dataset-split', default='val')
+    parser.add_argument('-l', '--num-layers', type=int, default=6)
+    parser.add_argument('-t', '--num_layers_to_train', type=int, default=-1) 
+    parser.add_argument('-d', '--downsample_factor', type=int, default=1)
+    args = parser.parse_args()
     accuracy, loss = test_cnn(args.mode, args.num_layers, args.num_layers_to_train,
             args.downsample_factor, dataset=args.dataset_split)
     print args.dataset_split, 'accuracy:', accuracy
     print args.dataset_split, 'loss:', loss
+
 
 

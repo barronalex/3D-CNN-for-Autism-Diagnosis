@@ -15,19 +15,27 @@ slim = tf.contrib.slim
 
 DATA_DIR = 'data'
 
-LR = 0.0001
-L2 = 0.001
-MAX_EPOCHS = 100
-EARLY_STOPPING = 20
-DROPOUT = 0.8
+class Config():
 
-KERNEL_SIZE = 3 
-NUM_FILTERS = 8
-DOWNSAMPLE_EVERY = 2
+    lr = 0.0001
+    l2 = 0.001
+    dropout = 0.8
 
-MODE = 'pretrain'
+    kernel_size = 3 
+    num_filters = 8
+    downsample_every = 2
 
-class CNN_3D():
+    num_layers = 4
+    num_layers_to_train = num_layers
+    num_layers_to_restore = 0
+    downsample_every = 2
+    downsample_factor = 2
+    use_sex_labels = False
+
+    mode = 'pretrain'
+
+
+class CNN_3D(object):
 
     def _save_images(self, images, outputs, name):
         if len(outputs.shape) == 4:
@@ -55,10 +63,10 @@ class CNN_3D():
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
         return accuracy
 
-    def calc_loss(self, outputs, labels, mode='pretrain'):
+    def calc_loss(self, outputs, labels):
 
         # in pretraining outputs and labels are the full 3d MRIs
-        if mode == 'pretrain':
+        if self.config.mode == 'pretrain':
             loss = tf.reduce_sum(tf.square(outputs - labels))
         else:
             loss = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(outputs, labels)) 
@@ -68,38 +76,45 @@ class CNN_3D():
         return loss
 
     def add_train_op(self, loss):
-        train_op = tf.train.AdamOptimizer(learning_rate=LR).minimize(loss)
+        train_op = tf.train.AdamOptimizer(learning_rate=self.config.lr).minimize(loss)
         return train_op
 
     def correlation_inference(self, correlation):
-        output = slim.fully_connected(correlation, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(L2))
+        output = slim.fully_connected(correlation, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
         return output
 
-    def image_inference(self, images, num_layers, num_layers_to_train, mode='pretrain', train=True):
+    def image_inference(self, images, train=True):
 
         images = tf.expand_dims(images, -1)
 
+        # for convenience
+        num_filters = self.config.num_filters
+        kernel_size = self.config.kernel_size
+        downsample_every = self.config.downsample_every
+        num_layers = self.config.num_layers
+        num_layers_to_train = self.config.num_layers_to_train
+
         # conv
         trainable = True if num_layers_to_train >= num_layers else False
-        forward = conv3d(images, KERNEL_SIZE, 1, NUM_FILTERS,
+        forward = conv3d(images, kernel_size, 1, num_filters,
                 scope='conv_1', trainable=trainable)
 
         for i in range(num_layers - 1):
-            stride = 2 if i % DOWNSAMPLE_EVERY == 0 else 1
+            stride = 2 if i % downsample_every == 0 else 1
             trainable = True if i+2 > num_layers - num_layers_to_train else False
-            forward = conv3d(forward, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS,
+            forward = conv3d(forward, kernel_size, num_filters, num_filters,
                     scope='conv_' + str(i+2), stride=stride, trainable=trainable)
             if stride == 2:
-                forward = slim.dropout(forward, keep_prob=DROPOUT, is_training=train)
+                forward = slim.dropout(forward, keep_prob=self.config.dropout, is_training=train)
 
-        if mode == 'pretrain':
+        if self.config.mode == 'pretrain':
             backward = forward
             # deconv
             for i in range(num_layers - 1):
-                stride = 1 if i % DOWNSAMPLE_EVERY == 0 else 2
-                backward = conv3d_transpose(backward, KERNEL_SIZE, NUM_FILTERS, NUM_FILTERS,
+                stride = 1 if i % downsample_every == 0 else 2
+                backward = conv3d_transpose(backward, kernel_size, num_filters, num_filters,
                         scope='conv_' + str(num_layers - i), stride=stride)
-            backward = conv3d_transpose(backward, KERNEL_SIZE, NUM_FILTERS, 1, scope='conv_1', stride=2)
+            backward = conv3d_transpose(backward, kernel_size, num_filters, 1, scope='conv_1', stride=2)
             output = tf.squeeze(backward)
         else:
 
@@ -107,16 +122,16 @@ class CNN_3D():
         
             with tf.variable_scope('fully_connected'):
                 # fully connected layer
-                output = slim.fully_connected(flattened, 2000, weights_regularizer=slim.l2_regularizer(L2))
-                output = slim.fully_connected(output, 500, weights_regularizer=slim.l2_regularizer(L2))
-                output = slim.fully_connected(output, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(L2))
+                output = slim.fully_connected(flattened, 2000, weights_regularizer=slim.l2_regularizer(self.config.l2))
+                output = slim.fully_connected(output, 500, weights_regularizer=slim.l2_regularizer(self.config.l2))
+                output = slim.fully_connected(output, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
 
         return output, forward
 
-    def inference(self, images, correlation, num_layers, num_layers_to_train, mode, train):
-        image_outputs, self.filt = self.image_inference(images, num_layers, num_layers_to_train, mode, train)
+    def inference(self, images, correlation, train):
+        image_outputs, self.filt = self.image_inference(images, train)
         corr_outputs = self.correlation_inference(correlation)
-        if mode == 'correlation': return corr_outputs
+        if self.config.use_correlation == 2: return corr_outputs
         return image_outputs
 
     def add_summaries(self, images, train):
@@ -134,11 +149,11 @@ class CNN_3D():
         tf.image_summary('filter', filt)
         tf.image_summary('image', tf.expand_dims(image, -1))
 
-    def __init__(self, image_batch, label_batch, corr_batch,
-            num_layers, mode, num_layers_to_train=0, train=True):
-        label_batch = image_batch if mode == 'pretrain' else label_batch
-        self.outputs = self.inference(image_batch, corr_batch, num_layers, num_layers_to_train, mode, train)
-        self.loss = self.calc_loss(self.outputs, label_batch, mode)
+    def __init__(self, config, image_batch, label_batch, corr_batch, train=True):
+        self.config = config
+        label_batch = image_batch if config.mode == 'pretrain' else label_batch
+        self.outputs = self.inference(image_batch, corr_batch, train)
+        self.loss = self.calc_loss(self.outputs, label_batch)
         self.predictions = self.make_predictions(self.outputs)
         self.accuracy = self.calc_accuracy(self.predictions, label_batch)
         self.train_op = self.add_train_op(self.loss)

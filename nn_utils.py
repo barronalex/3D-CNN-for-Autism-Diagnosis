@@ -145,8 +145,8 @@ def rotate_image_tensor(image, angle, mode='black'):
 
     return image_rotated
 
-def get_save_path(params, param_names):
-    path = 'weights/cnn'
-    for i in range(len(params)):
-        path += '_' + param_names[i] + '=' + str(params[i])
+def get_save_path(config):
+    path = 'weights/model'
+    for a, v in config.__dict__.iteritems():
+        path += '_' + a + '=' + str(v)
     return path
