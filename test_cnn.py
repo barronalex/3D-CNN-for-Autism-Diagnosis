@@ -40,18 +40,25 @@ def test_cnn(mode='supervised', num_layers=2,
         filename_queue = tf.train.string_input_producer([fn], num_epochs=1)
 
         with tf.device('/cpu:0'):
-            image, label, sex = mri_input.read_and_decode_single_example(filename_queue, train=False,
+            image, label, sex, corr = mri_input.read_and_decode_single_example(filename_queue, train=False,
                     downsample_factor=downsample_factor)
 
-            image_batch, label_batch, sex_batch = tf.train.batch(
-                [image, label, sex], batch_size=BATCH_SIZE,
+            image_batch, label_batch, sex_batch, corr_batch = tf.train.batch(
+                [image, label, sex, corr], batch_size=BATCH_SIZE,
                 capacity=100,
                 allow_smaller_final_batch=True
                 )
 
         label_batch = sex_batch if use_sex_labels else label_batch 
 
-        cnn = CNN_3D(image_batch, label_batch, num_layers, mode, train=False)
+        cnn = CNN_3D(
+                image_batch,
+                label_batch,
+                corr_batch,
+                num_layers,
+                mode,
+                train=False
+                )
 
         sess = tf.Session()
 

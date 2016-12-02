@@ -17,16 +17,23 @@ test_split = 0.2
 
 assert train_split + val_split + test_split == 1
 
-def save_to_record(images, labels, ages, sexes, split='train'):
+def save_to_record(images, labels, ages, sexes, ids, split='train'):
     print ''
     print '==> saving ' + split + ' data into tf records file'
     writer = tf.python_io.TFRecordWriter(DATA_DIR + '/mri' + '_' + split + '.tfrecords')
+
+    corr_file = h5py.File('data/time_series.h5')
 
     for i in tqdm(range(len(images))):
         image = images[i]
         label = labels[i]
         age = ages[i]
         sex = sexes[i]
+
+        if ids[i] not in corr_file: continue
+        corr = corr_file[ids[i]][:]
+
+        # gating criteria to control results
 
         example = tf.train.Example(
                 features = tf.train.Features(
@@ -42,6 +49,9 @@ def save_to_record(images, labels, ages, sexes, split='train'):
                             ),
                         'sex': tf.train.Feature(
                             int64_list=tf.train.Int64List(value=[sex])
+                            ),
+                        'corr': tf.train.Feature(
+                            float_list=tf.train.FloatList(value=corr.flatten())
                             )
                     }
                 )
@@ -97,12 +107,14 @@ labels = np.array(phenotype_data[:,2] - 1, dtype=int)
 ages = np.array(phenotype_data[:,4], dtype=float)
 # 0 is male, 1 is female
 sexes = np.array(phenotype_data[:,5] - 1, dtype=int)
+ids = np.array(phenotype_data[:,1], dtype=str)
 
 train_labels, val_labels, test_labels = split_data(labels)
 train_ages, val_ages, test_ages = split_data(ages)
 train_sexes, val_sexes, test_sexes = split_data(sexes)
+train_ids, val_ids, test_ids = split_data(ids)
 
 
-save_to_record(train_images, train_labels, train_ages, train_sexes)
-save_to_record(val_images, val_labels, val_ages, val_sexes, split='val')
-save_to_record(test_images, test_labels, test_ages, test_sexes, split='test')
+save_to_record(train_images, train_labels, train_ages, train_sexes, train_ids)
+save_to_record(val_images, val_labels, val_ages, val_sexes, val_ids, split='val')
+save_to_record(test_images, test_labels, test_ages, test_sexes, test_ids, split='test')

@@ -45,18 +45,24 @@ def train_cnn(mode='supervised', num_layers=2, num_layers_to_restore=2,
     filename_queue = tf.train.string_input_producer([fn], num_epochs=None)
 
     with tf.device('/cpu:0'):
-        image, label, sex = mri_input.read_and_decode_single_example(filename_queue, downsample_factor=downsample_factor)
+        image, label, sex, corr = mri_input.read_and_decode_single_example(filename_queue, downsample_factor=downsample_factor)
 
-        image_batch, label_batch, sex_batch = tf.train.shuffle_batch(
-            [image, label, sex], batch_size=BATCH_SIZE,
+        image_batch, label_batch, sex_batch, corr_batch = tf.train.shuffle_batch(
+            [image, label, sex, corr], batch_size=BATCH_SIZE,
             capacity=10000,
             min_after_dequeue=MIN_IMAGES_IN_QUEUE
             )
 
     label_batch = sex_batch if use_sex_labels else label_batch 
 
-    cnn = CNN_3D(image_batch, label_batch, num_layers, mode,
-            num_layers_to_train)
+    cnn = CNN_3D(
+            image_batch,
+            label_batch,
+            corr_batch,
+            num_layers,
+            mode,
+            num_layers_to_train
+            )
 
     # only restore layers that were previously trained
     pretrained_names = ['conv_' + str(i+1) + '/weights:0' for i in range(num_layers_to_restore)]

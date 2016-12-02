@@ -35,13 +35,16 @@ def read_and_decode_single_example(filename_queue, train=True, downsample_factor
         features={
             'label': tf.FixedLenFeature([], tf.int64),
             'sex': tf.FixedLenFeature([], tf.int64),
-            'image': tf.FixedLenFeature(np.prod(IMAGE_DIMS), tf.float32)
+            'image': tf.FixedLenFeature(np.prod(IMAGE_DIMS), tf.float32),
+            'corr': tf.FixedLenFeature(116**2, tf.float32)
         })
     # now return the converted data
     label = features['label']
     sex = features['sex']
     image = features['image']
     image = tf.reshape(image, IMAGE_DIMS)
+    corr = features['corr']
+    corr = tf.reshape(corr, [116, 116])
 
     if downsample_factor > 1:
         image = tf.expand_dims(image, -1)
@@ -55,4 +58,4 @@ def read_and_decode_single_example(filename_queue, train=True, downsample_factor
     if train:
         image = distort_image(image)
 
-    return image, label, sex
+    return image, label, sex, corr

@@ -71,7 +71,11 @@ class CNN_3D():
         train_op = tf.train.AdamOptimizer(learning_rate=LR).minimize(loss)
         return train_op
 
-    def inference(self, images, num_layers, num_layers_to_train, mode='pretrain', train=True):
+    def correlation_inference(self, correlation):
+        output = slim.fully_connected(correlation, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(L2))
+        return output
+
+    def image_inference(self, images, num_layers, num_layers_to_train, mode='pretrain', train=True):
 
         images = tf.expand_dims(images, -1)
 
@@ -109,6 +113,12 @@ class CNN_3D():
 
         return output, forward
 
+    def inference(self, images, correlation, num_layers, num_layers_to_train, mode, train):
+        image_outputs, self.filt = self.image_inference(images, num_layers, num_layers_to_train, mode, train)
+        corr_outputs = self.correlation_inference(correlation)
+        if mode == 'correlation': return corr_outputs
+        return image_outputs
+
     def add_summaries(self, images, train):
         dataset = 'train' if train else 'validation'
         tf.scalar_summary('loss', self.loss)
@@ -117,16 +127,17 @@ class CNN_3D():
         im_depth = int(images.get_shape()[1])/2
         filt = tf.squeeze(
                 tf.slice(self.filt, [0, filt_depth, 0, 0, 0], [-1, 1, -1, -1, 1])
-                , [3])
+                , [1])
         image = tf.squeeze(
                 tf.slice(images, [0, im_depth, 0, 0], [-1, 1, -1, -1])
                 )
         tf.image_summary('filter', filt)
         tf.image_summary('image', tf.expand_dims(image, -1))
 
-    def __init__(self, image_batch, label_batch, num_layers, mode, num_layers_to_train=0, train=True):
+    def __init__(self, image_batch, label_batch, corr_batch,
+            num_layers, mode, num_layers_to_train=0, train=True):
         label_batch = image_batch if mode == 'pretrain' else label_batch
-        self.outputs, self.filt = self.inference(image_batch, num_layers, num_layers_to_train, mode, train)
+        self.outputs = self.inference(image_batch, corr_batch, num_layers, num_layers_to_train, mode, train)
         self.loss = self.calc_loss(self.outputs, label_batch, mode)
         self.predictions = self.make_predictions(self.outputs)
         self.accuracy = self.calc_accuracy(self.predictions, label_batch)
