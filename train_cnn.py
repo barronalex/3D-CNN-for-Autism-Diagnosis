@@ -17,9 +17,6 @@ SAVE_EVERY = 10
 MIN_IMAGES_IN_QUEUE = 10
 EARLY_STOPPING = 100
 
-
-print 'wooooooo'
-
 def train_cnn(config):
 
     mode = config.mode
@@ -94,14 +91,14 @@ def train_cnn(config):
 
     for step in xrange(MAX_STEPS):
         start_time = time.time()
-        _, loss_value, image_value, output_value, accuracy, filter_val, summary = sess.run([
+        _, loss_value, image_value, output_value, accuracy, summary = sess.run([
                     cnn.train_op,
                     cnn.loss,
                     image_batch,
                     cnn.outputs,
                     cnn.accuracy,
-                    cnn.filt,
                     cnn.merged])
+        #print output_value
         train_accuracy += accuracy
         duration = time.time() - start_time
         summary_writer.add_summary(summary, step)
@@ -135,16 +132,15 @@ def train_cnn(config):
                     early_stopping_count += 1
                     if early_stopping_count >= EARLY_STOPPING: break
 
-                cnn._save_images(image_value, filter_val, 'new_' + str(step))
+                #cnn._save_images(image_value, filter_val, 'new_' + str(step))
             else:
                 saver.save(sess, 
                         'weights/cae_' + mode + '_' + str(num_layers) + '.weights')
-                cnn._save_images(image_value, output_value, 'new_' + str(step))
+                #cnn._save_images(image_value, output_value, 'new_' + str(step))
     sess.close()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("-z", "--test", default=0)
     parser.add_argument("-m", "--mode", default="supervised")
     parser.add_argument("-l", "--num-layers", type=int, default=4)
     parser.add_argument("-r", "--num-layers-to-restore", type=int, default=0)
@@ -152,7 +148,7 @@ if __name__ == '__main__':
             help="trains the specified number of innermost layers")
     parser.add_argument("-d", "--downsample_factor", type=int, default=2)
     parser.add_argument("-s", "--use_sex_labels", type=bool, default=False)
-    parser.add_argument("--use_correlation", type=int, default=0, help="0 indicates no use, 1 supplements, 2 trains on only correlation")
+    parser.add_argument("-c", "--use_correlation", type=int, default=0, help="0 indicates no use, 1 supplements, 2 trains on only correlation")
     args = parser.parse_args()
     config = Config()
     config.num_layers = args.num_layers
@@ -161,6 +157,6 @@ if __name__ == '__main__':
     config.num_layers_to_restore = args.num_layers_to_restore
     config.downsample_factor = args.downsample_factor
     config.use_sex_labels = args.use_sex_labels
-    #config.use_correlation = args.use_correlation
+    config.use_correlation = args.use_correlation
     train_cnn(config)
        

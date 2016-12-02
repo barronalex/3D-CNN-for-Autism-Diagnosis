@@ -80,7 +80,13 @@ class CNN_3D(object):
         return train_op
 
     def correlation_inference(self, correlation):
-        output = slim.fully_connected(correlation, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
+        flattened = slim.flatten(correlation)
+        summed = tf.reduce_sum(flattened)
+        flattened = tf.Print(flattened, [summed])
+        layer_1 = slim.fully_connected(flattened, 1000, weights_regularizer=slim.l2_regularizer(self.config.l2))
+        output = slim.fully_connected(layer_1, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
+        #output = tf.Print(output, [output], first_n=10)
+        print output.get_shape()
         return output
 
     def image_inference(self, images, train=True):
@@ -129,25 +135,27 @@ class CNN_3D(object):
         return output, forward
 
     def inference(self, images, correlation, train):
+        if self.config.use_correlation == 2: 
+            corr_outputs = self.correlation_inference(correlation)
+            return corr_outputs
         image_outputs, self.filt = self.image_inference(images, train)
-        corr_outputs = self.correlation_inference(correlation)
-        if self.config.use_correlation == 2: return corr_outputs
         return image_outputs
 
     def add_summaries(self, images, train):
         dataset = 'train' if train else 'validation'
         tf.scalar_summary('loss', self.loss)
         tf.scalar_summary('accuracy', self.accuracy)
-        filt_depth = int(self.filt.get_shape()[1])/2
-        im_depth = int(images.get_shape()[1])/2
-        filt = tf.squeeze(
-                tf.slice(self.filt, [0, filt_depth, 0, 0, 0], [-1, 1, -1, -1, 1])
-                , [1])
-        image = tf.squeeze(
-                tf.slice(images, [0, im_depth, 0, 0], [-1, 1, -1, -1])
-                )
-        tf.image_summary('filter', filt)
-        tf.image_summary('image', tf.expand_dims(image, -1))
+        if self.config.use_correlation != 2:
+            filt_depth = int(self.filt.get_shape()[1])/2
+            im_depth = int(images.get_shape()[1])/2
+            filt = tf.squeeze(
+                    tf.slice(self.filt, [0, filt_depth, 0, 0, 0], [-1, 1, -1, -1, 1])
+                    , [1])
+            image = tf.squeeze(
+                    tf.slice(images, [0, im_depth, 0, 0], [-1, 1, -1, -1])
+                    )
+            tf.image_summary('filter', filt)
+            tf.image_summary('image', tf.expand_dims(image, -1))
 
     def __init__(self, config, image_batch, label_batch, corr_batch, train=True):
         self.config = config

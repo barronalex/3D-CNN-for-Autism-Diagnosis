@@ -16,6 +16,7 @@ for f in tqdm(filenames):
     data = np.reshape(data, (NUM_BRAIN_REGIONS, len(data)/NUM_BRAIN_REGIONS))
     # find pearson correlation
     correlation = np.corrcoef(data)
+    correlation = np.nan_to_num(correlation)
     output_file.create_dataset(id, data = correlation)
 
 output_file.close()
