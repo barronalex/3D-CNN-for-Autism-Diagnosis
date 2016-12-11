@@ -17,8 +17,8 @@ DATA_DIR = 'data'
 
 class Config():
 
-    lr = 0.0001
-    l2 = 0.001
+    lr = 0.001
+    l2 = 0.01
     dropout = 0.8
 
     kernel_size = 3 
@@ -81,12 +81,9 @@ class CNN_3D(object):
 
     def correlation_inference(self, correlation):
         flattened = slim.flatten(correlation)
-        summed = tf.reduce_sum(flattened)
-        flattened = tf.Print(flattened, [summed])
-        layer_1 = slim.fully_connected(flattened, 1000, weights_regularizer=slim.l2_regularizer(self.config.l2))
-        output = slim.fully_connected(layer_1, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
-        #output = tf.Print(output, [output], first_n=10)
-        print output.get_shape()
+        #summed = tf.reduce_sum(flattened)
+        #flattened = tf.Print(flattened, [summed])
+        output = slim.fully_connected(flattened, 2, weights_regularizer=slim.l2_regularizer(self.config.l2))
         return output
 
     def image_inference(self, images, train=True):
@@ -101,9 +98,12 @@ class CNN_3D(object):
         num_layers_to_train = self.config.num_layers_to_train
 
         # conv
-        trainable = True if num_layers_to_train >= num_layers else False
-        forward = conv3d(images, kernel_size, 1, num_filters,
-                scope='conv_1', trainable=trainable)
+        if num_layers > 0:
+            trainable = True if num_layers_to_train >= num_layers else False
+            forward = conv3d(images, kernel_size, 1, num_filters,
+                    scope='conv_1', trainable=trainable)
+        else:
+            forward = images
 
         for i in range(num_layers - 1):
             stride = 2 if i % downsample_every == 0 else 1

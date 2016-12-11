@@ -12,10 +12,10 @@ import nn_utils
 import sys
 
 BATCH_SIZE = 15
-MAX_STEPS = 100000
-SAVE_EVERY = 10
-MIN_IMAGES_IN_QUEUE = 10
-EARLY_STOPPING = 100
+MAX_STEPS = 10000
+SAVE_EVERY = 100
+MIN_EXAMPLES_IN_QUEUE = 1000
+EARLY_STOPPING = 20
 
 def train_cnn(config):
 
@@ -23,22 +23,24 @@ def train_cnn(config):
 
     save_path = nn_utils.get_save_path(config)
 
-    intro_str = '==> building 3D CNN with %d layers'
+    intro_str = '==> Building 3D CNN with %d layers'
     print intro_str % (config.num_layers)
     if config.use_sex_labels:
         print 'Debugging by training on gender labels'
 
-    fn = 'data/mri_train.tfrecords'
+    fn = 'data/mri_{}train.tfrecords'.format(config.gate)
+    print '==> Reading examples from', fn
     filename_queue = tf.train.string_input_producer([fn], num_epochs=None)
 
     with tf.device('/cpu:0'):
         image, label, sex, corr = mri_input.read_and_decode_single_example(filename_queue,
-                downsample_factor=config.downsample_factor)
+                downsample_factor=config.downsample_factor, corr=config.use_correlation,
+                rotate=config.rotate, noise=config.noise)
 
         image_batch, label_batch, sex_batch, corr_batch = tf.train.shuffle_batch(
             [image, label, sex, corr], batch_size=BATCH_SIZE,
             capacity=10000,
-            min_after_dequeue=MIN_IMAGES_IN_QUEUE
+            min_after_dequeue=MIN_EXAMPLES_IN_QUEUE
             )
 
     label_batch = sex_batch if config.use_sex_labels else label_batch 
@@ -64,7 +66,7 @@ def train_cnn(config):
 
     sess = tf.Session()
 
-    summary_writer = tf.train.SummaryWriter('summaries/{}/train'.format(save_path[8:]), sess.graph)
+    summary_writer = tf.train.SummaryWriter('summaries/' + config.sum_dir + '/{}/train'.format(save_path[8:]), sess.graph)
 
     init = tf.initialize_all_variables()
     sess.run(init)
@@ -73,7 +75,8 @@ def train_cnn(config):
     if config.num_layers_to_restore > 0:
         restorer = tf.train.Saver(pretrained_vars)
         print '==> restoring weights'
-        path = 'weights/cae_pretrain_{}.weights'.format(str(num_layers_to_restore))
+        #path = 'weights/cae_pretrain_{}.weights'.format(str(num_layers_to_restore))
+        path = 'weights/greedy_6layer_weights.weights'
         assert os.path.exists(path)
         restorer.restore(sess, path)
     if config.num_layers_to_restore == -1:
@@ -84,7 +87,8 @@ def train_cnn(config):
 
     saver = tf.train.Saver()
 
-    tf.train.start_queue_runners(sess=sess)
+    coord = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
     train_accuracy = 0
     best_val_loss = None
@@ -137,9 +141,109 @@ def train_cnn(config):
                 saver.save(sess, 
                         'weights/cae_' + mode + '_' + str(num_layers) + '.weights')
                 #cnn._save_images(image_value, output_value, 'new_' + str(step))
+    coord.request_stop()
+    coord.join(threads)
     sess.close()
+    tf.reset_default_graph()
+
+def compare_gating():
+    config = Config()
+    # comparisons we want to make:
+    # compare predicting gender to autism
+    # use the same architecture for each gate
+    config.downsample_factor = 6
+    config.num_layers = 0
+    config.num_layers_to_train = 0
+    config.mode = 'supervised'
+    config.num_layers_to_restore = 0
+    config.use_correlation = 0
+    config.sum_dir = 'gating_comparison'
+
+    #config.use_sex_labels = False
+    #config.gate = 'male'
+    #train_cnn(config)
+
+    #config.use_sex_labels = True
+    #config.gate = 'equal_gender'
+    #train_cnn(config)
+
+    config.use_sex_labels = False
+    config.gate = 'shuffle'
+    train_cnn(config)
+
+def compare_layers():
+    config = Config()
+    config.downsample_factor = 6
+    config.num_layers = 0
+    config.num_layers_to_train = 0
+    config.mode = 'supervised'
+    config.num_layers_to_restore = 0
+    config.use_correlation = 0
+    config.sum_dir = 'layer_comparison'
+    config.use_sex_labels = False
+    config.gate = 'male'
+    train_cnn(config)
+
+    config.downsample_factor = 4
+    config.num_layers = 2
+    config.num_layers_to_train = 2
+    train_cnn(config)
+
+    config.downsample_factor = 2
+    config.num_layers = 4
+    config.num_layers_to_train = 4
+    train_cnn(config)
+
+    config.downsample_factor = 0
+    config.num_layers = 6
+    config.num_layers_to_train = 6
+    train_cnn(config)
+
+    config.use_correlation = 2
+    train_cnn(config)
+
+def compare_data_augmentation():
+    config = Config()
+    config.downsample_factor = 0
+    config.num_layers = 6
+    config.num_layers_to_train = 6
+    config.mode = 'supervised'
+    config.num_layers_to_restore = 0
+    config.use_correlation = 0
+    config.sum_dir = 'data_augmentation_comparison'
+    config.use_sex_labels = False
+    config.gate = 'male'
+
+    config.num_layers_to_restore = 6
+    config.num_layers_to_train = 0
+    config.rotate = True
+    config.noise = 0.1
+    train_cnn(config)
+
+    config.num_layers_to_train = 6
+    config.rotate = True
+    config.noise = 0.1
+    train_cnn(config)
+
+    config.num_layers_to_restore = 0
+    config.num_layers_to_train = 6
+    config.rotate = True
+    config.noise = 0.1
+    train_cnn(config)
+
+    config.rotate = False
+    config.noise = 0
+    train_cnn(config)
+
+    config.rotate = False
+    config.noise = 1
+    train_cnn(config)
 
 if __name__ == '__main__':
+    compare_data_augmentation() 
+    sys.exit()
+
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", default="supervised")
     parser.add_argument("-l", "--num-layers", type=int, default=4)
@@ -149,8 +253,11 @@ if __name__ == '__main__':
     parser.add_argument("-d", "--downsample_factor", type=int, default=2)
     parser.add_argument("-s", "--use_sex_labels", type=bool, default=False)
     parser.add_argument("-c", "--use_correlation", type=int, default=0, help="0 indicates no use, 1 supplements, 2 trains on only correlation")
+    parser.add_argument('-g', '--gate', default='')
+    parser.add_argument('-sd', '--sum-dir', default='')
     args = parser.parse_args()
     config = Config()
+    config.gate = args.gate
     config.num_layers = args.num_layers
     config.num_layers_to_train = args.num_layers_to_train
     config.mode = args.mode
@@ -158,5 +265,7 @@ if __name__ == '__main__':
     config.downsample_factor = args.downsample_factor
     config.use_sex_labels = args.use_sex_labels
     config.use_correlation = args.use_correlation
+    config.sum_dir = args.sum_dir
     train_cnn(config)
+
        

@@ -4,7 +4,7 @@ import numpy as np
 import os
 import argparse
 
-from cnn_3d import CNN_3D
+from cnn_3d import CNN_3D, Config
 import mri_input
 import nn_utils
 
@@ -25,7 +25,8 @@ def test_cnn(config, dataset='val', start_step=0):
 
     with test_graph.as_default():
 
-        fn = 'data/mri_{}.tfrecords'.format(dataset)
+        fn = 'data/mri_{}.tfrecords'.format(config.gate + dataset)
+        print fn
         filename_queue = tf.train.string_input_producer([fn], num_epochs=1)
 
         with tf.device('/cpu:0'):
@@ -50,7 +51,7 @@ def test_cnn(config, dataset='val', start_step=0):
 
         sess = tf.Session()
 
-        summary_writer = tf.train.SummaryWriter('summaries/{}/test'.format(restore_path[8:]))
+        summary_writer = tf.train.SummaryWriter('summaries/' + config.sum_dir + '/{}/test'.format(restore_path[8:]))
 
         init = tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
         sess.run(init)
@@ -82,14 +83,27 @@ def test_cnn(config, dataset='val', start_step=0):
         
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--mode', default='supervised')
-    parser.add_argument('-s', '--dataset-split', default='val')
-    parser.add_argument('-l', '--num-layers', type=int, default=6)
-    parser.add_argument('-t', '--num_layers_to_train', type=int, default=-1) 
-    parser.add_argument('-d', '--downsample_factor', type=int, default=1)
+    parser.add_argument('-ds', '--dataset-split', default='val')
+    parser.add_argument("-m", "--mode", default="supervised")
+    parser.add_argument("-l", "--num-layers", type=int, default=4)
+    parser.add_argument("-r", "--num-layers-to-restore", type=int, default=0)
+    parser.add_argument("-t", "--num-layers-to-train", type=int, default=4, 
+            help="trains the specified number of innermost layers")
+    parser.add_argument("-d", "--downsample_factor", type=int, default=2)
+    parser.add_argument("-s", "--use_sex_labels", type=bool, default=False)
+    parser.add_argument("-c", "--use_correlation", type=int, default=0, help="0 indicates no use, 1 supplements, 2 trains on only correlation")
+    parser.add_argument('-g', '--gate', default='')
     args = parser.parse_args()
-    accuracy, loss = test_cnn(args.mode, args.num_layers, args.num_layers_to_train,
-            args.downsample_factor, dataset=args.dataset_split)
+    config = Config()
+    config.gate = args.gate
+    config.num_layers = args.num_layers
+    config.num_layers_to_train = args.num_layers_to_train
+    config.mode = args.mode
+    config.num_layers_to_restore = args.num_layers_to_restore
+    config.downsample_factor = args.downsample_factor
+    config.use_sex_labels = args.use_sex_labels
+    config.use_correlation = args.use_correlation
+    accuracy, loss = test_cnn(config, dataset=args.dataset_split)
     print args.dataset_split, 'accuracy:', accuracy
     print args.dataset_split, 'loss:', loss
 
