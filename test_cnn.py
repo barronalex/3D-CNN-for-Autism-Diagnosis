@@ -19,6 +19,7 @@ def test_cnn(config, dataset='val', start_step=0):
     best = True if dataset == 'test' else False
 
     restore_path = nn_utils.get_save_path(config)
+    print 'restore path:', restore_path
 
     if best:
         restore_path += '_best'
@@ -93,6 +94,9 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--use_sex_labels", type=bool, default=False)
     parser.add_argument("-c", "--use_correlation", type=int, default=0, help="0 indicates no use, 1 supplements, 2 trains on only correlation")
     parser.add_argument('-g', '--gate', default='')
+    parser.add_argument('-ro', '--rotate', type=int, default=1)
+    parser.add_argument('-no', '--noise', type=float, default=0.1)
+    parser.add_argument('-sd', '--sum-dir', default='')
     args = parser.parse_args()
     config = Config()
     config.gate = args.gate
@@ -103,6 +107,10 @@ if __name__ == '__main__':
     config.downsample_factor = args.downsample_factor
     config.use_sex_labels = args.use_sex_labels
     config.use_correlation = args.use_correlation
+    config.sum_dir = args.sum_dir
+    config.rotate = bool(args.rotate)
+    if args.noise == 1: args.noise = int(args.noise)
+    config.noise = args.noise
     accuracy, loss = test_cnn(config, dataset=args.dataset_split)
     print args.dataset_split, 'accuracy:', accuracy
     print args.dataset_split, 'loss:', loss

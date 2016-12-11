@@ -2,7 +2,8 @@ import tensorflow as tf
 import numpy as np
 slim = tf.contrib.slim
 
-def conv3d(inputs, kernel_size, num_channels, num_filters, scope='', stride=1, activation=tf.nn.relu, l2=0.0, padding='SAME', trainable=True):
+def conv3d(inputs, kernel_size, num_channels, num_filters,
+        scope='', stride=1, activation=tf.nn.relu, l2=0.0, padding='SAME', trainable=True):
 
     with tf.variable_scope(scope, initializer = slim.xavier_initializer()):
 
@@ -20,7 +21,8 @@ def conv3d(inputs, kernel_size, num_channels, num_filters, scope='', stride=1, a
     
     return output
 
-def conv3d_transpose(inputs, kernel_size, num_channels, num_filters, scope='', stride=1, activation=tf.nn.relu, l2=0.0, padding='SAME'):
+def conv3d_transpose(inputs, kernel_size, num_channels, num_filters,
+        scope='', stride=1, activation=tf.nn.relu, l2=0.0, padding='SAME'):
 
     def get_deconv_dim(dim_size, stride_size, kernel_size, padding):
         dim_size *= stride_size

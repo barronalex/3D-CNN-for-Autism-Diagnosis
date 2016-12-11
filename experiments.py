@@ -1,4 +1,5 @@
 from train_cnn import train_cnn
+from cnn_3d import Config
 
 def compare_gating():
     config = Config()
@@ -86,3 +87,15 @@ def compare_data_augmentation_and_pretraining():
     config.rotate = False
     config.noise = 1
     train_cnn(config)
+
+def compare_correlation():
+    config = Config()
+    config.use_correlation = 2
+    config.gate = 'male'
+    config.sum_dir = 'correlation_comparison'
+    config.rotate = True
+    config.noise = 0.1
+    config.mode = 'supervised'
+    train_cnn(config)
+
+compare_correlation()
