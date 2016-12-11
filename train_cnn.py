@@ -146,103 +146,8 @@ def train_cnn(config):
     sess.close()
     tf.reset_default_graph()
 
-def compare_gating():
-    config = Config()
-    # comparisons we want to make:
-    # compare predicting gender to autism
-    # use the same architecture for each gate
-    config.downsample_factor = 6
-    config.num_layers = 0
-    config.num_layers_to_train = 0
-    config.mode = 'supervised'
-    config.num_layers_to_restore = 0
-    config.use_correlation = 0
-    config.sum_dir = 'gating_comparison'
-
-    #config.use_sex_labels = False
-    #config.gate = 'male'
-    #train_cnn(config)
-
-    #config.use_sex_labels = True
-    #config.gate = 'equal_gender'
-    #train_cnn(config)
-
-    config.use_sex_labels = False
-    config.gate = 'shuffle'
-    train_cnn(config)
-
-def compare_layers():
-    config = Config()
-    config.downsample_factor = 6
-    config.num_layers = 0
-    config.num_layers_to_train = 0
-    config.mode = 'supervised'
-    config.num_layers_to_restore = 0
-    config.use_correlation = 0
-    config.sum_dir = 'layer_comparison'
-    config.use_sex_labels = False
-    config.gate = 'male'
-    train_cnn(config)
-
-    config.downsample_factor = 4
-    config.num_layers = 2
-    config.num_layers_to_train = 2
-    train_cnn(config)
-
-    config.downsample_factor = 2
-    config.num_layers = 4
-    config.num_layers_to_train = 4
-    train_cnn(config)
-
-    config.downsample_factor = 0
-    config.num_layers = 6
-    config.num_layers_to_train = 6
-    train_cnn(config)
-
-    config.use_correlation = 2
-    train_cnn(config)
-
-def compare_data_augmentation():
-    config = Config()
-    config.downsample_factor = 0
-    config.num_layers = 6
-    config.num_layers_to_train = 6
-    config.mode = 'supervised'
-    config.num_layers_to_restore = 0
-    config.use_correlation = 0
-    config.sum_dir = 'data_augmentation_comparison'
-    config.use_sex_labels = False
-    config.gate = 'male'
-
-    config.num_layers_to_restore = 6
-    config.num_layers_to_train = 0
-    config.rotate = True
-    config.noise = 0.1
-    train_cnn(config)
-
-    config.num_layers_to_train = 6
-    config.rotate = True
-    config.noise = 0.1
-    train_cnn(config)
-
-    config.num_layers_to_restore = 0
-    config.num_layers_to_train = 6
-    config.rotate = True
-    config.noise = 0.1
-    train_cnn(config)
-
-    config.rotate = False
-    config.noise = 0
-    train_cnn(config)
-
-    config.rotate = False
-    config.noise = 1
-    train_cnn(config)
 
 if __name__ == '__main__':
-    compare_data_augmentation() 
-    sys.exit()
-
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", default="supervised")
@@ -255,6 +160,8 @@ if __name__ == '__main__':
     parser.add_argument("-c", "--use_correlation", type=int, default=0, help="0 indicates no use, 1 supplements, 2 trains on only correlation")
     parser.add_argument('-g', '--gate', default='')
     parser.add_argument('-sd', '--sum-dir', default='')
+    parser.add_argument('-ro', '--rotate', type=bool, default=True)
+    parser.add_argument('-no', '--noise', type=float, default=0.1)
     args = parser.parse_args()
     config = Config()
     config.gate = args.gate
@@ -266,6 +173,8 @@ if __name__ == '__main__':
     config.use_sex_labels = args.use_sex_labels
     config.use_correlation = args.use_correlation
     config.sum_dir = args.sum_dir
+    config.rotate = args.rotate
+    config.noise = args.noise
     train_cnn(config)
 
        
