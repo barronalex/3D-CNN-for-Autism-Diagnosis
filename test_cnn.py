@@ -12,17 +12,19 @@ BATCH_SIZE = 15
 NUM_EXAMPLES = {'train': 749, 'val': 107, 'test': 215}
 
 # only need to test the cnn when 
-def test_cnn(config, dataset='val', start_step=0):
+def test_cnn(config, dataset='val', start_step=0, restore_path=None):
 
     test_graph = tf.Graph()
 
     best = True if dataset == 'test' else False
 
-    restore_path = nn_utils.get_save_path(config)
-    print 'restore path:', restore_path
+    if restore_path is None:
+        restore_path = nn_utils.get_save_path(config)
 
     if best:
         restore_path += '_best'
+
+    print 'restore path:', restore_path
 
     with test_graph.as_default():
 
@@ -97,6 +99,7 @@ if __name__ == '__main__':
     parser.add_argument('-ro', '--rotate', type=int, default=1)
     parser.add_argument('-no', '--noise', type=float, default=0.1)
     parser.add_argument('-sd', '--sum-dir', default='')
+    parser.add_argument('--restore_path', default=None)
     args = parser.parse_args()
     config = Config()
     config.gate = args.gate
@@ -111,7 +114,7 @@ if __name__ == '__main__':
     config.rotate = bool(args.rotate)
     if args.noise == 1: args.noise = int(args.noise)
     config.noise = args.noise
-    accuracy, loss = test_cnn(config, dataset=args.dataset_split)
+    accuracy, loss = test_cnn(config, dataset=args.dataset_split, restore_path=args.restore_path)
     print args.dataset_split, 'accuracy:', accuracy
     print args.dataset_split, 'loss:', loss
 

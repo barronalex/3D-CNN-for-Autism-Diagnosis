@@ -81,9 +81,9 @@ class CNN_3D(object):
 
     def correlation_inference(self, correlation):
         flattened = slim.flatten(correlation)
-        #summed = tf.reduce_sum(flattened)
-        #flattened = tf.Print(flattened, [summed])
-        output = slim.fully_connected(flattened, 2, weights_regularizer=slim.l2_regularizer(self.config.l2))
+        layer_1 = slim.fully_connected(flattened, 1000, weights_regularizer=slim.l2_regularizer(self.config.l2))
+        output = slim.fully_connected(layer_1, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
+        #output = slim.fully_connected(flattened, 2, activation_fn=None, weights_regularizer=slim.l2_regularizer(self.config.l2))
         return output
 
     def image_inference(self, images, train=True):
@@ -139,6 +139,14 @@ class CNN_3D(object):
             corr_outputs = self.correlation_inference(correlation)
             return corr_outputs
         image_outputs, self.filt = self.image_inference(images, train)
+
+        # pool correlation and image results
+        if self.config.use_correlation == 1:
+            corr_outputs = self.correlation_inference(correlation)
+            outputs = tf.concat(1, [image_outputs, corr_outputs])
+            outputs = slim.fully_connected(outputs, 2, activation_fn=None)
+            return outputs
+
         return image_outputs
 
     def add_summaries(self, images, train):

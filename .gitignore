@@ -6,3 +6,4 @@
 /figures
 /summaries
 time_series_rnn.py
+download_data.sh

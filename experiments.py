@@ -90,11 +90,14 @@ def compare_data_augmentation_and_pretraining():
 
 def compare_correlation():
     config = Config()
-    config.use_correlation = 2
+    config.use_correlation = 1
     config.gate = 'male'
     config.sum_dir = 'correlation_comparison'
     config.rotate = True
     config.noise = 0.1
+    config.num_layers = 6
+    config.num_layers_to_restore = 6
+    config.num_layers_to_train = 0
     config.mode = 'supervised'
     train_cnn(config)
 
